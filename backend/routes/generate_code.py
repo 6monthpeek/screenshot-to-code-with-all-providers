@@ -456,10 +456,13 @@ class ModelSelectionStage:
             # 1. Per-variant configs from the VariantBuilder UI take precedence.
             if variant_model_configs:
                 selected: List[Llm] = []
-                for _cfg_dict in variant_model_configs:
-                    # Llm enum is a placeholder; the actual model_id is
-                    # carried through variant_model_configs into _build_session.
-                    selected.append(Llm.GPT_5_5_LOW)
+                for cfg_dict in variant_model_configs:
+                    family = cfg_dict.get("family", "openai")
+                    # If this variant uses an OpenAI proxy or generic provider, return the OmniRoute enum placeholder
+                    if family == "openai" or cfg_dict.get("base_url"):
+                        selected.append(Llm.OMNIR_GEMINI_3_6_FLASH_HIGH)
+                    else:
+                        selected.append(Llm.GPT_5_5_LOW)
                 return selected
 
             # 2. If the user picked a specific model from the dropdown, honor
@@ -922,12 +925,23 @@ class CodeGenerationMiddleware(Middleware):
                 code_generation_model=context.extracted_params.code_generation_model,
                 openai_base_url=context.extracted_params.openai_base_url,
             )
-            if IS_DEBUG_ENABLED:
+            if IS_DEBUG_ENABLED or True:
+                labels: List[str] = []
+                if context.extracted_params.variant_model_configs:
+                    for cfg_dict in context.extracted_params.variant_model_configs:
+                        labels.append(
+                            cfg_dict.get("label")
+                            or cfg_dict.get("model_id")
+                            or "OpenAI/OmniRoute"
+                        )
+                else:
+                    labels = [model.value for model in context.variant_models]
+
                 await context.send_message(
                     "variantModels",
                     None,
                     0,
-                    {"models": [model.value for model in context.variant_models]},
+                    {"models": labels},
                     None,
                 )
 
