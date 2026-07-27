@@ -14,11 +14,28 @@ def _wrap_assistant_file_content(content: str, path: str = "index.html") -> str:
     return f'<file path="{path}">\n{stripped}\n</file>'
 
 
+def _as_dict(obj: object) -> dict[str, object]:
+    if isinstance(obj, dict):
+        return obj
+    if isinstance(obj, (tuple, list)):
+        try:
+            return dict(obj)
+        except Exception:
+            return {}
+    if hasattr(obj, "items"):
+        return dict(obj.items())  # type: ignore
+    return {}
+
+
 def build_history_message(item: PromptHistoryMessage) -> ChatCompletionMessageParam:
-    role = item["role"]
-    image_urls = item.get("images", [])
-    video_urls = item.get("videos", [])
+    item_dict = _as_dict(item)
+    role = str(item_dict.get("role", "user"))
+    raw_images = item_dict.get("images")
+    raw_videos = item_dict.get("videos")
+    image_urls = raw_images if isinstance(raw_images, list) else []
+    video_urls = raw_videos if isinstance(raw_videos, list) else []
     media_urls = [*image_urls, *video_urls]
+    text_val = str(item_dict.get("text", ""))
 
     if role == "user" and len(media_urls) > 0:
         user_content: list[ChatCompletionContentPartParam] = []
@@ -27,14 +44,14 @@ def build_history_message(item: PromptHistoryMessage) -> ChatCompletionMessagePa
             user_content.append(
                 {
                     "type": "image_url",
-                    "image_url": {"url": media_url, "detail": "high"},
+                    "image_url": {"url": str(media_url), "detail": "high"},
                 }
             )
 
         user_content.append(
             {
                 "type": "text",
-                "text": item.get("text", ""),
+                "text": text_val,
             }
         )
 
@@ -51,9 +68,9 @@ def build_history_message(item: PromptHistoryMessage) -> ChatCompletionMessagePa
         {
             "role": role,
             "content": (
-                _wrap_assistant_file_content(item.get("text", ""))
+                _wrap_assistant_file_content(text_val)
                 if role == "assistant"
-                else item.get("text", "")
+                else text_val
             ),
         },
     )
