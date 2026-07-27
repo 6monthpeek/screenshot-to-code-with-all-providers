@@ -51,6 +51,20 @@ function SettingsTab({ settings, setSettings, appTheme, setAppTheme }: Props) {
     }));
   };
 
+  // When a manual key is empty, the first enabled provider of that family
+  // supplies the credentials (see App.tsx) — surface that in the UI.
+  const providerForFamily = (family: "openai" | "anthropic" | "gemini") =>
+    settings.providers.find((p) => p.enabled && p.family === family);
+  const openaiProvider = !settings.openAiApiKey
+    ? providerForFamily("openai")
+    : undefined;
+  const anthropicProvider = !settings.anthropicApiKey
+    ? providerForFamily("anthropic")
+    : undefined;
+  const geminiProvider = !settings.geminiApiKey
+    ? providerForFamily("gemini")
+    : undefined;
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="px-4 py-4 lg:px-6 lg:py-6">
@@ -143,11 +157,21 @@ function SettingsTab({ settings, setSettings, appTheme, setAppTheme }: Props) {
                 <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
                   Only stored in your browser. Never stored on servers. Overrides
                   your .env config.
+                  {openaiProvider && (
+                    <span className="mt-0.5 block text-emerald-600 dark:text-emerald-400">
+                      Using provider &ldquo;{openaiProvider.label}&rdquo; below —
+                      leave this empty.
+                    </span>
+                  )}
                 </p>
                 <Input
                   id="openai-api-key"
                   className="mt-2"
-                  placeholder="OpenAI API key"
+                  placeholder={
+                    openaiProvider
+                      ? `Provided by ${openaiProvider.label}`
+                      : "OpenAI API key"
+                  }
                   value={settings.openAiApiKey || ""}
                   onChange={(e) =>
                     setSettings((s) => ({
@@ -189,11 +213,21 @@ function SettingsTab({ settings, setSettings, appTheme, setAppTheme }: Props) {
                 <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
                   Only stored in your browser. Never stored on servers. Overrides
                   your .env config.
+                  {anthropicProvider && (
+                    <span className="mt-0.5 block text-emerald-600 dark:text-emerald-400">
+                      Using provider &ldquo;{anthropicProvider.label}&rdquo; below —
+                      leave this empty.
+                    </span>
+                  )}
                 </p>
                 <Input
                   id="anthropic-api-key"
                   className="mt-2"
-                  placeholder="Anthropic API key"
+                  placeholder={
+                    anthropicProvider
+                      ? `Provided by ${anthropicProvider.label}`
+                      : "Anthropic API key"
+                  }
                   value={settings.anthropicApiKey || ""}
                   onChange={(e) =>
                     setSettings((s) => ({
@@ -211,11 +245,21 @@ function SettingsTab({ settings, setSettings, appTheme, setAppTheme }: Props) {
                 <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
                   Only stored in your browser. Never stored on servers. Overrides
                   your .env config.
+                  {geminiProvider && (
+                    <span className="mt-0.5 block text-emerald-600 dark:text-emerald-400">
+                      Using provider &ldquo;{geminiProvider.label}&rdquo; below —
+                      leave this empty.
+                    </span>
+                  )}
                 </p>
                 <Input
                   id="gemini-api-key"
                   className="mt-2"
-                  placeholder="Gemini API key"
+                  placeholder={
+                    geminiProvider
+                      ? `Provided by ${geminiProvider.label}`
+                      : "Gemini API key"
+                  }
                   value={settings.geminiApiKey || ""}
                   onChange={(e) =>
                     setSettings((s) => ({

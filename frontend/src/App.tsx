@@ -338,6 +338,37 @@ function App() {
       designSystem: selectedDesignSystem?.content ?? null,
     };
 
+    // Settings-driven credentials: when the user added an enabled provider but
+    // left the matching manual API key field empty, use the provider's
+    // credentials so .env on the backend is unnecessary.
+    if (!settings.openAiApiKey) {
+      const defaultProvider = settings.providers.find(
+        (p) => p.enabled && p.family === "openai"
+      );
+      if (defaultProvider) {
+        updatedParams.openAiApiKey = defaultProvider.apiKey;
+        if (defaultProvider.baseUrl) {
+          updatedParams.openAiBaseURL = defaultProvider.baseUrl;
+        }
+      }
+    }
+    if (!settings.anthropicApiKey) {
+      const defaultProvider = settings.providers.find(
+        (p) => p.enabled && p.family === "anthropic"
+      );
+      if (defaultProvider) {
+        updatedParams.anthropicApiKey = defaultProvider.apiKey;
+      }
+    }
+    if (!settings.geminiApiKey) {
+      const defaultProvider = settings.providers.find(
+        (p) => p.enabled && p.family === "gemini"
+      );
+      if (defaultProvider) {
+        updatedParams.geminiApiKey = defaultProvider.apiKey;
+      }
+    }
+
     // Use 4 variants for create, 2 for edits to match backend counts
     // and avoid a flash when the backend sends the actual variant count
     const initialVariantCount =
