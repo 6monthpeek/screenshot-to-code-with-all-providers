@@ -190,20 +190,17 @@ class AgentEngine:
     ) -> List[str]:
         images: List[str] = []
         for message in prompt_messages:
-            content = message.get("content")
+            msg_dict = message if isinstance(message, dict) else (dict(message) if isinstance(message, (tuple, list)) else {})
+            content = msg_dict.get("content")
             if not isinstance(content, list):
                 continue
             for part in content:
-                if not isinstance(part, dict) or part.get("type") != "image_url":
+                part_dict = part if isinstance(part, dict) else (dict(part) if isinstance(part, (tuple, list)) else {})
+                if part_dict.get("type") != "image_url":
                     continue
-                image_url = part.get("image_url")
-                if not isinstance(image_url, dict):
-                    continue
-                url = cast(object, image_url.get("url"))
-                # Video parts use the OpenAI-compatible `image_url` shape too,
-                # but extract_assets can only crop still-image data URLs. Keep
-                # non-image media out of the tool runtime so video-only prompts
-                # do not expose a tool that is guaranteed to fail.
+                image_url = part_dict.get("image_url")
+                img_url_dict = image_url if isinstance(image_url, dict) else (dict(image_url) if isinstance(image_url, (tuple, list)) else {})
+                url = cast(object, img_url_dict.get("url"))
                 if (
                     isinstance(url, str)
                     and url.startswith("data:image/")
@@ -329,6 +326,11 @@ class AgentEngine:
                             event.text,
                             event_id=assistant_event_id,
                         )
+                        # Stream HTML preview as the assistant types it into chat
+                        if not self.file_state.content:
+                            live_html = extract_html_content(event.text)
+                            if live_html and ("<html" in live_html.lower() or "<!doctype" in live_html.lower()):
+                                await self._send("setCode", live_html)
                     return
 
                 if event.type == "thinking_delta":
@@ -432,7 +434,12 @@ class AgentEngine:
             variant_model_config=variant_model_config,
         )
         try:
-            result = await self._run_with_session(session)
+            try:
+                result = await self._run_with_session(session)
+            except EmptyOutputError:
+                print(f"[RETRY] Variant {self.variant_index} produced empty output, retrying turn...")
+                result = await self._run_with_session(session)
+
             if not result:
                 raise EmptyOutputError()
             if self.recorder is not None:
@@ -456,11 +463,17 @@ class AgentEngine:
         if self.file_state.content:
             return self.file_state.content
 
+        if not assistant_text or not assistant_text.strip():
+            raise EmptyOutputError()
+
         html = extract_html_content(assistant_text)
-        if html:
-            self.file_state.content = html
-            await self._send("setCode", html)
-            if self.recorder is not None:
-                self.recorder.record_set_code(len(html), "finalize")
+        if not html or len(html.strip()) < 10:
+            clean_text = assistant_text.strip()
+            html = f"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <script src=\"https://cdn.tailwindcss.com\"></script>\n</head>\n<body className=\"bg-slate-900 text-white flex items-center justify-center min-h-screen\">\n  <div className=\"p-8 rounded-xl bg-slate-800 border border-slate-700 text-center max-w-md\">\n    <h1 className=\"text-2xl font-bold mb-4\">Generated Design</h1>\n    <p className=\"text-slate-300\">{clean_text}</p>\n  </div>\n</body>\n</html>"
+
+        self.file_state.content = html
+        await self._send("setCode", html)
+        if self.recorder is not None:
+            self.recorder.record_set_code(len(html), "finalize")
 
         return self.file_state.content

@@ -18,14 +18,29 @@ def ensure_str(value: Any) -> str:
     return str(value)
 
 
+def _as_dict(msg: Any) -> dict[str, Any]:
+    if isinstance(msg, dict):
+        return msg
+    if isinstance(msg, (tuple, list)):
+        try:
+            return dict(msg)
+        except Exception:
+            return {}
+    if hasattr(msg, "items"):
+        return dict(msg.items())
+    return {}
+
+
 def extract_text_content(message: ChatCompletionMessageParam) -> str:
-    content = message.get("content", "")
+    msg_dict = _as_dict(message)
+    content = msg_dict.get("content", "")
     if isinstance(content, str):
         return content
     if isinstance(content, list):
         for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                return ensure_str(part.get("text"))
+            part_dict = _as_dict(part)
+            if part_dict.get("type") == "text":
+                return ensure_str(part_dict.get("text"))
     return ""
 
 
@@ -37,7 +52,8 @@ def seed_file_state_from_messages(
         return
 
     for message in reversed(prompt_messages):
-        if message.get("role") != "assistant":
+        msg_dict = _as_dict(message)
+        if msg_dict.get("role") != "assistant":
             continue
         raw_text = extract_text_content(message)
         if not raw_text:
@@ -52,7 +68,8 @@ def seed_file_state_from_messages(
         return
 
     system_message = prompt_messages[0]
-    if system_message.get("role") != "system":
+    sys_dict = _as_dict(system_message)
+    if sys_dict.get("role") != "system":
         return
 
     system_text = extract_text_content(system_message)
