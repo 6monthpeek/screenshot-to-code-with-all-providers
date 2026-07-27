@@ -4,19 +4,11 @@ import { useThrottle } from "../../hooks/useThrottle";
 import {
   CODE_GENERATION_MODEL_DESCRIPTIONS,
   CodeGenerationModel,
-  getVariantLabel,
-  VariantLabelTone,
 } from "../../lib/models";
 import WorkingPulse from "../core/WorkingPulse";
 
 const IFRAME_WIDTH = 1280;
 const IFRAME_HEIGHT = 550;
-
-// Color-coded badge shown in the corner of each variant thumbnail.
-const BADGE_TONE: Record<VariantLabelTone, string> = {
-  fast: "bg-sky-500/90 text-white",
-  max: "bg-amber-500/90 text-white",
-};
 
 interface VariantThumbnailProps {
   code: string;
@@ -77,14 +69,12 @@ function VariantThumbnail({ code, isSelected }: VariantThumbnailProps) {
 }
 
 function Variants() {
-  const { head, commits, updateSelectedVariantIndex, inputMode } =
+  const { head, commits, updateSelectedVariantIndex } =
     useProjectStore();
 
   const commit = head ? commits[head] : null;
   const variants = commit?.variants || [];
   const selectedVariantIndex = commit?.selectedVariantIndex || 0;
-  const generationType: "create" | "update" =
-    commit?.type === "ai_create" ? "create" : "update";
 
   const handleVariantClick = (index: number) => {
     if (index === selectedVariantIndex || !head) return;
@@ -130,11 +120,6 @@ function Variants() {
           if (variant.status === "complete") statusColor = "bg-green-500";
           else if (variant.status === "error" || variant.status === "cancelled") statusColor = "bg-red-500";
 
-          const label = getVariantLabel(variant.model, {
-            inputMode,
-            generationType,
-          });
-
           return (
             <div
               key={index}
@@ -146,12 +131,13 @@ function Variants() {
               title={variant.model ? (CODE_GENERATION_MODEL_DESCRIPTIONS[variant.model as CodeGenerationModel]?.name || variant.model) : undefined}
               onClick={() => handleVariantClick(index)}
             >
-              {/* Color-coded model badge in the thumbnail corner */}
-              {label && (
+              {/* Display model label directly in the corner */}
+              {variant.model && (
                 <span
-                  className={`absolute top-1.5 right-1.5 z-10 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none shadow-sm ${BADGE_TONE[label.tone]}`}
+                  className="absolute top-1.5 right-1.5 z-10 max-w-[120px] truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-none bg-zinc-900/80 text-zinc-200 border border-zinc-700/80 shadow-sm backdrop-blur-sm"
+                  title={variant.model}
                 >
-                  {label.text}
+                  {variant.model}
                 </span>
               )}
               <VariantThumbnail
