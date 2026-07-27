@@ -1,6 +1,14 @@
-# screenshot-to-code
+# screenshot-to-code-with-all-providers
 
-Convert screenshots, mockups, Figma designs, and screen recordings into clean, functional code using AI. The easiest way to try this is using <a href="https://screenshottocode.com/?utm_source=github&utm_medium=readme&utm_campaign=oss_readme&utm_content=top_cta" target="_blank" rel="noopener noreferrer">the official, hosted product at screenshottocode.com →</a>
+> **Fork of [abi/screenshot-to-code](https://github.com/abi/screenshot-to-code) with multi-provider support and per-variant model selection.**
+>
+> Adds:
+> - **Generic provider registry** — any OpenAI-compatible endpoint (OmniRoute, OpenRouter, Groq, Together, Fireworks, Novita, z.ai, NVIDIA NIM, Ollama, LM Studio, vLLM, SGLang, etc.), Anthropic, and Gemini side-by-side.
+> - **Per-variant model selection** — each generation slot can use a different provider+model, configured from the Settings panel.
+> - **Provider manager UI** — add/remove/toggle providers, set custom base URLs, label them.
+> - **Variant builder UI** — pick the provider and model id for each variant slot.
+
+Convert screenshots, mockups, Figma designs, and screen recordings into clean, functional code using AI. The easiest way to try the upstream product is using <a href="https://screenshottocode.com/?utm_source=github&utm_medium=readme&utm_campaign=oss_readme&utm_content=top_cta" target="_blank" rel="noopener noreferrer">the official, hosted product at screenshottocode.com →</a>
 
 
 https://github.com/user-attachments/assets/ec08a5e6-9606-41c5-b03a-1bf47dfeba75

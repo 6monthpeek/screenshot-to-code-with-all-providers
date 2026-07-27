@@ -26,6 +26,30 @@ export interface Settings {
   isTermOfServiceAccepted: boolean;
   anthropicApiKey: string | null;
   geminiApiKey: string | null;
+  // User-configured providers (OpenAI-compatible, Anthropic, Gemini).
+  providers: ProviderConfig[];
+  // Per-variant overrides. When set, takes precedence over key-based selection.
+  variantModelConfigs: VariantModelConfigInput[] | null;
+}
+
+export type ProviderFamily = "openai" | "anthropic" | "gemini";
+
+export interface ProviderConfig {
+  id: string; // local uuid
+  label: string; // user-facing name, e.g. "OmniRoute" or "OpenRouter"
+  family: ProviderFamily;
+  baseUrl: string | null; // null = provider default
+  apiKey: string;
+  enabled: boolean;
+}
+
+export interface VariantModelConfigInput {
+  family: ProviderFamily;
+  model_id: string;
+  label: string;
+  api_key: string;
+  base_url: string | null;
+  reasoning_effort?: string | null;
 }
 
 export interface DesignSystem {

@@ -101,6 +101,8 @@ function App() {
       selectedDesignSystemId: null,
       // Only relevant for hosted version
       isTermOfServiceAccepted: false,
+      providers: [],
+      variantModelConfigs: null,
     },
     "setting"
   );

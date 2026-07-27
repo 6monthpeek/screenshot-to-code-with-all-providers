@@ -268,6 +268,12 @@ class ExtractedParams:
     should_extract_assets: bool = True
     asset_base_url: str = ""
     design_system: str | None = None
+    # Per-variant overrides from the frontend. When present, takes precedence
+    # over the key-based ModelSelectionStage fallback.
+    variant_model_configs: List[Dict[str, Any]] | None = None
+    # The user's model choice from the dropdown. When variant_model_configs
+    # is not set, this is honored instead of the key-based default set.
+    code_generation_model: str | None = None
 
 
 class ParameterExtractionStage:
@@ -373,6 +379,21 @@ class ParameterExtractionStage:
             else None
         )
 
+        # Per-variant model configs (optional, frontend-driven)
+        raw_variant_configs = params.get("variantModelConfigs")
+        variant_model_configs: List[Dict[str, Any]] | None = None
+        if isinstance(raw_variant_configs, list) and raw_variant_configs:
+            variant_model_configs = []
+            for entry in raw_variant_configs:
+                if isinstance(entry, dict):
+                    variant_model_configs.append(entry)
+
+        # User's dropdown choice (e.g. "gpt-5.5 (high thinking)"). Sent as
+        # codeGenerationModel from the frontend settings.
+        code_generation_model = params.get("codeGenerationModel")
+        if not isinstance(code_generation_model, str) or not code_generation_model:
+            code_generation_model = None
+
         return ExtractedParams(
             stack=validated_stack,
             input_mode=validated_input_mode,
@@ -390,6 +411,8 @@ class ParameterExtractionStage:
             option_codes=option_codes,
             asset_base_url=self.asset_base_url,
             design_system=design_system,
+            variant_model_configs=variant_model_configs,
+            code_generation_model=code_generation_model,
         )
 
     def _get_from_settings_dialog_or_env(
@@ -421,9 +444,40 @@ class ModelSelectionStage:
         openai_api_key: str | None,
         anthropic_api_key: str | None,
         gemini_api_key: str | None = None,
+        variant_model_configs: List[Dict[str, Any]] | None = None,
+        code_generation_model: str | None = None,
     ) -> List[Llm]:
-        """Select appropriate models based on available API keys"""
+        """Select appropriate models based on available API keys or frontend overrides"""
         try:
+            # 1. Per-variant configs from the VariantBuilder UI take precedence.
+            if variant_model_configs:
+                selected: List[Llm] = []
+                for _cfg_dict in variant_model_configs:
+                    # Llm enum is a placeholder; the actual model_id is
+                    # carried through variant_model_configs into _build_session.
+                    selected.append(Llm.GPT_5_5_LOW)
+                return selected
+
+            # 2. If the user picked a specific model from the dropdown, honor
+            #    it for every variant. Map the enum string back to Llm.
+            if code_generation_model:
+                for llm in Llm:
+                    if llm.value == code_generation_model:
+                        num_variants = (
+                            2 if generation_type == "update" else NUM_VARIANTS
+                        )
+                        print(
+                            f"Using user-selected model for all {num_variants} "
+                            f"variants: {code_generation_model}"
+                        )
+                        return [llm] * num_variants
+                # Unknown model string — fall through to key-based default.
+                print(
+                    f"Unknown codeGenerationModel '{code_generation_model}', "
+                    "falling back to key-based selection"
+                )
+
+            # 3. Legacy: pick based on which API keys are available.
             num_variants = 2 if generation_type == "update" else NUM_VARIANTS
             variant_models = self._get_variant_models(
                 generation_type,
@@ -566,6 +620,7 @@ class AgenticGenerationStage:
         stack: str | None = None,
         input_mode: str | None = None,
         generation_type: str | None = None,
+        variant_model_configs: List[Dict[str, Any]] | None = None,
     ):
         self.send_message = send_message
         self.openai_api_key = openai_api_key
@@ -578,6 +633,7 @@ class AgenticGenerationStage:
         self.file_state = file_state
         self.asset_base_url = asset_base_url
         self.option_codes = option_codes or []
+        self.variant_model_configs = variant_model_configs
         self.generation_id = (
             generation_id
             or f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -655,7 +711,25 @@ class AgenticGenerationStage:
                 option_codes=self.option_codes,
                 recorder=recorder,
             )
-            completion = await runner.run(model, prompt_messages)
+            # Resolve the per-variant override, if any.
+            variant_cfg_obj = None
+            if self.variant_model_configs and index < len(self.variant_model_configs):
+                from agent.variant_config import VariantModelConfig
+
+                cfg_dict = self.variant_model_configs[index]
+                variant_cfg_obj = VariantModelConfig(
+                    family=cfg_dict.get("family", "openai"),
+                    model_id=cfg_dict["model_id"],
+                    label=cfg_dict.get("label", cfg_dict["model_id"]),
+                    api_key=cfg_dict["api_key"],
+                    base_url=cfg_dict.get("base_url"),
+                    reasoning_effort=cfg_dict.get("reasoning_effort"),
+                )
+            completion = await runner.run(
+                model,
+                prompt_messages,
+                variant_model_config=variant_cfg_obj,
+            )
             if completion:
                 await self.send_message("setCode", completion, index, None, None)
             await self.send_message(
@@ -815,6 +889,8 @@ class CodeGenerationMiddleware(Middleware):
                 openai_api_key=context.extracted_params.openai_api_key,
                 anthropic_api_key=context.extracted_params.anthropic_api_key,
                 gemini_api_key=context.extracted_params.gemini_api_key,
+                variant_model_configs=context.extracted_params.variant_model_configs,
+                code_generation_model=context.extracted_params.code_generation_model,
             )
             if IS_DEBUG_ENABLED:
                 await context.send_message(
@@ -840,6 +916,7 @@ class CodeGenerationMiddleware(Middleware):
                 stack=str(context.extracted_params.stack),
                 input_mode=str(context.extracted_params.input_mode),
                 generation_type=context.extracted_params.generation_type,
+                variant_model_configs=context.extracted_params.variant_model_configs,
             )
 
             context.variant_completions = await generation_stage.process_variants(

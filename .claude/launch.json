@@ -2,30 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frontend",
+      "name": "screenshot-to-code-frontend",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "dev",
         "--port",
-        "5199",
+        "5173",
         "--strictPort"
       ],
-      "port": 5199,
+      "port": 5173,
       "cwd": "frontend"
-    },
-    {
-      "name": "backend",
-      "runtimeExecutable": "poetry",
-      "runtimeArgs": [
-        "run",
-        "uvicorn",
-        "main:app",
-        "--reload",
-        "--port",
-        "7001"
-      ],
-      "port": 7001,
-      "cwd": "backend"
     }
   ]
 }

@@ -23,6 +23,8 @@ class Llm(Enum):
     GPT_5_6_SOL_XHIGH = "gpt-5.6-sol (xhigh thinking)"
     GPT_5_6_SOL_MAX = "gpt-5.6-sol (max thinking)"
     GPT_5_6_TERRA_LOW = "gpt-5.6-terra (low thinking)"
+    # OmniRoute (OpenAI-compatible local gateway)
+    OMNIR_GEMINI_3_6_FLASH_HIGH = "omniroute antigravity/gemini-3.6-flash-high"
     # Claude
     CLAUDE_SONNET_4_6 = "claude-sonnet-4-6"
     CLAUDE_OPUS_5_LOW = "claude-opus-5 (low effort)"
@@ -84,6 +86,7 @@ MODEL_PROVIDER: dict[Llm, str] = {
     Llm.GPT_5_6_SOL_XHIGH: "openai",
     Llm.GPT_5_6_SOL_MAX: "openai",
     Llm.GPT_5_6_TERRA_LOW: "openai",
+    Llm.OMNIR_GEMINI_3_6_FLASH_HIGH: "openai",
     # Anthropic models
     Llm.CLAUDE_SONNET_4_6: "anthropic",
     Llm.CLAUDE_OPUS_5_LOW: "anthropic",
@@ -156,6 +159,7 @@ OPENAI_MODEL_CONFIG: dict[Llm, dict[str, str]] = {
     Llm.GPT_5_6_SOL_XHIGH: {"api_name": "gpt-5.6-sol", "reasoning_effort": "xhigh"},
     Llm.GPT_5_6_SOL_MAX: {"api_name": "gpt-5.6-sol", "reasoning_effort": "max"},
     Llm.GPT_5_6_TERRA_LOW: {"api_name": "gpt-5.6-terra", "reasoning_effort": "low"},
+    Llm.OMNIR_GEMINI_3_6_FLASH_HIGH: {"api_name": "antigravity/gemini-3.6-flash-high", "reasoning_effort": "none"},
 }
 
 

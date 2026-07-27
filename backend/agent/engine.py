@@ -96,6 +96,94 @@ class AgentEngine:
         )
         self._tool_preview_lengths: Dict[str, int] = {}
 
+    def _build_session(
+        self,
+        model: Llm,
+        prompt_messages: List[ChatCompletionMessageParam],
+        variant_model_config: "VariantModelConfig | None" = None,
+    ) -> ProviderSession:
+        """Build a provider session for this variant.
+
+        When variant_model_config is set, we honor the per-variant override
+        (any provider family). Otherwise we fall back to the legacy
+        key-based factory which inspects the global API keys.
+        """
+        from agent.tools import canonical_tool_definitions
+        from agent.variant_config import VariantModelConfig
+        from agent.providers.openai_compatible import create_openai_compatible_session
+        from preview_screenshot import is_screenshot_preview_available
+        from config import REPLICATE_API_KEY
+
+        if variant_model_config is not None:
+            canonical_tools = canonical_tool_definitions(
+                image_generation_enabled=self.should_generate_images,
+                image_editing_enabled=bool(
+                    self.replicate_api_key or REPLICATE_API_KEY
+                ),
+                asset_extraction_enabled=(
+                    self.should_extract_assets
+                    and bool(self.tool_runtime.input_images)
+                    and variant_model_config.family == "gemini"
+                ),
+                screenshot_enabled=is_screenshot_preview_available(),
+            )
+            if variant_model_config.family == "openai":
+                return create_openai_compatible_session(
+                    cfg=variant_model_config,
+                    prompt_messages=prompt_messages,
+                    tools=canonical_tools,
+                    recorder=self.recorder,
+                )
+            # Anthropic / Gemini families go through the legacy factory using
+            # the per-variant api_key; the Llm enum is a placeholder.
+            return create_provider_session(
+                model=model,
+                prompt_messages=prompt_messages,
+                should_generate_images=self.should_generate_images,
+                openai_api_key=(
+                    variant_model_config.api_key
+                    if variant_model_config.family == "openai"
+                    else self.openai_api_key
+                ),
+                openai_base_url=(
+                    variant_model_config.base_url
+                    if variant_model_config.family == "openai"
+                    else self.openai_base_url
+                ),
+                anthropic_api_key=(
+                    variant_model_config.api_key
+                    if variant_model_config.family == "anthropic"
+                    else self.anthropic_api_key
+                ),
+                gemini_api_key=(
+                    variant_model_config.api_key
+                    if variant_model_config.family == "gemini"
+                    else self.gemini_api_key
+                ),
+                replicate_api_key=self.replicate_api_key,
+                should_extract_assets=(
+                    self.should_extract_assets
+                    and bool(self.tool_runtime.input_images)
+                ),
+                recorder=self.recorder,
+            )
+
+        # Legacy path: no per-variant override.
+        return create_provider_session(
+            model=model,
+            prompt_messages=prompt_messages,
+            should_generate_images=self.should_generate_images,
+            openai_api_key=self.openai_api_key,
+            openai_base_url=self.openai_base_url,
+            anthropic_api_key=self.anthropic_api_key,
+            gemini_api_key=self.gemini_api_key,
+            replicate_api_key=self.replicate_api_key,
+            should_extract_assets=(
+                self.should_extract_assets and bool(self.tool_runtime.input_images)
+            ),
+            recorder=self.recorder,
+        )
+
     @staticmethod
     def _extract_input_images(
         prompt_messages: List[ChatCompletionMessageParam],
@@ -326,30 +414,22 @@ class AgentEngine:
 
         raise Exception("Agent exceeded max tool turns")
 
-    async def run(self, model: Llm, prompt_messages: List[ChatCompletionMessageParam]) -> str:
+    async def run(
+        self,
+        model: Llm,
+        prompt_messages: List[ChatCompletionMessageParam],
+        variant_model_config: "VariantModelConfig | None" = None,
+    ) -> str:
         self.tool_runtime.input_images = self._extract_input_images(prompt_messages)
         seed_file_state_from_messages(self.file_state, prompt_messages)
 
         if self.recorder is not None:
             self.recorder.record_run_start(model, prompt_messages)
 
-        session = create_provider_session(
+        session = self._build_session(
             model=model,
             prompt_messages=prompt_messages,
-            should_generate_images=self.should_generate_images,
-            openai_api_key=self.openai_api_key,
-            openai_base_url=self.openai_base_url,
-            anthropic_api_key=self.anthropic_api_key,
-            gemini_api_key=self.gemini_api_key,
-            replicate_api_key=self.replicate_api_key,
-            # Only advertise extraction when the request actually contains a
-            # still image the runtime can crop. In particular, Gemini videos
-            # share the image_url message shape but are not valid extractor
-            # inputs.
-            should_extract_assets=(
-                self.should_extract_assets and bool(self.tool_runtime.input_images)
-            ),
-            recorder=self.recorder,
+            variant_model_config=variant_model_config,
         )
         try:
             result = await self._run_with_session(session)

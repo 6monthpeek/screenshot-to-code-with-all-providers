@@ -11,6 +11,8 @@ import {
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { HTTP_BACKEND_URL, IS_RUNNING_ON_CLOUD } from "../../config";
+import ProviderPanel from "./ProviderPanel";
+import VariantBuilder from "./VariantBuilder";
 
 interface Props {
   settings: Settings;
@@ -247,6 +249,30 @@ function SettingsTab({ settings, setSettings, appTheme, setAppTheme }: Props) {
                   />
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Multi-Provider / Per-Variant */}
+          <div className="rounded-lg border border-gray-200 bg-white dark:border-zinc-700 dark:bg-zinc-800/60">
+            <div className="border-b border-gray-100 px-4 py-3 dark:border-zinc-700">
+              <h2 className="text-sm font-medium text-gray-900 dark:text-white">
+                Multi-Provider & Variants
+              </h2>
+            </div>
+            <div className="space-y-4 p-4">
+              <ProviderPanel
+                providers={settings.providers}
+                onChange={(providers) =>
+                  setSettings((s) => ({ ...s, providers }))
+                }
+              />
+              <VariantBuilder
+                providers={settings.providers}
+                variantConfigs={settings.variantModelConfigs}
+                onChange={(variantModelConfigs) =>
+                  setSettings((s) => ({ ...s, variantModelConfigs }))
+                }
+              />
             </div>
           </div>
 

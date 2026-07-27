@@ -39,6 +39,7 @@ export enum CodeGenerationModel {
   GEMINI_3_6_FLASH_MEDIUM = "gemini-3.6-flash (medium thinking)",
   GEMINI_3_6_FLASH_LOW = "gemini-3.6-flash (low thinking)",
   GEMINI_3_6_FLASH_MINIMAL = "gemini-3.6-flash (minimal thinking)",
+  OMNIR_GEMINI_3_6_FLASH_HIGH = "omniroute antigravity/gemini-3.6-flash-high",
 }
 
 export type VariantLabelTone = "fast" | "max";
@@ -176,6 +177,9 @@ export const CODE_GENERATION_MODEL_DESCRIPTIONS: {
   },
   "gemini-3.6-flash (minimal thinking)": {
     name: "Gemini 3.6 Flash (minimal)",
+  },
+  "omniroute antigravity/gemini-3.6-flash-high": {
+    name: "OmniRoute Gemini 3.6 Flash (high)",
   },
   "gemini-3-flash-preview (high thinking)": {
     name: "Gemini 3 Flash (high)",
