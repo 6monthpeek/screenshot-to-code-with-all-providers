@@ -53,6 +53,29 @@ def create_provider_session(
 
     if model in ANTHROPIC_MODELS:
         if not anthropic_api_key:
+            if openai_api_key and openai_base_url:
+                from agent.variant_config import VariantModelConfig
+                from agent.providers.openai_compatible import create_openai_compatible_session
+                from llm import OPENAI_MODEL_CONFIG
+
+                model_id = (
+                    OPENAI_MODEL_CONFIG[model]["api_name"]
+                    if model in OPENAI_MODEL_CONFIG
+                    else model.value
+                )
+                cfg = VariantModelConfig(
+                    family="openai",
+                    model_id=model_id,
+                    label=model.value,
+                    api_key=openai_api_key,
+                    base_url=openai_base_url,
+                )
+                return create_openai_compatible_session(
+                    cfg=cfg,
+                    prompt_messages=prompt_messages,
+                    tools=canonical_tools,
+                    recorder=recorder,
+                )
             raise Exception("Anthropic API key is missing.")
 
         client = AsyncAnthropic(api_key=anthropic_api_key)
@@ -66,6 +89,29 @@ def create_provider_session(
 
     if model in GEMINI_MODELS:
         if not gemini_api_key:
+            if openai_api_key and openai_base_url:
+                from agent.variant_config import VariantModelConfig
+                from agent.providers.openai_compatible import create_openai_compatible_session
+                from llm import OPENAI_MODEL_CONFIG
+
+                model_id = (
+                    OPENAI_MODEL_CONFIG[model]["api_name"]
+                    if model in OPENAI_MODEL_CONFIG
+                    else model.value
+                )
+                cfg = VariantModelConfig(
+                    family="openai",
+                    model_id=model_id,
+                    label=model.value,
+                    api_key=openai_api_key,
+                    base_url=openai_base_url,
+                )
+                return create_openai_compatible_session(
+                    cfg=cfg,
+                    prompt_messages=prompt_messages,
+                    tools=canonical_tools,
+                    recorder=recorder,
+                )
             raise Exception("Gemini API key is missing.")
 
         client = genai.Client(api_key=gemini_api_key)

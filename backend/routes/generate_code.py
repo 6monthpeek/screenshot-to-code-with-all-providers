@@ -23,6 +23,9 @@ from config import (
 from custom_types import InputMode
 from llm import (
     Llm,
+    OPENAI_MODELS,
+    ANTHROPIC_MODELS,
+    GEMINI_MODELS,
 )
 from typing import (
     Any,
@@ -446,6 +449,7 @@ class ModelSelectionStage:
         gemini_api_key: str | None = None,
         variant_model_configs: List[Dict[str, Any]] | None = None,
         code_generation_model: str | None = None,
+        openai_base_url: str | None = None,
     ) -> List[Llm]:
         """Select appropriate models based on available API keys or frontend overrides"""
         try:
@@ -459,23 +463,37 @@ class ModelSelectionStage:
                 return selected
 
             # 2. If the user picked a specific model from the dropdown, honor
-            #    it for every variant. Map the enum string back to Llm.
+            #    it for every variant if the required API key (or OpenAI proxy) is available.
             if code_generation_model:
                 for llm in Llm:
                     if llm.value == code_generation_model:
-                        num_variants = (
-                            2 if generation_type == "update" else NUM_VARIANTS
-                        )
-                        print(
-                            f"Using user-selected model for all {num_variants} "
-                            f"variants: {code_generation_model}"
-                        )
-                        return [llm] * num_variants
-                # Unknown model string — fall through to key-based default.
-                print(
-                    f"Unknown codeGenerationModel '{code_generation_model}', "
-                    "falling back to key-based selection"
-                )
+                        can_execute = False
+                        if llm in OPENAI_MODELS and openai_api_key:
+                            can_execute = True
+                        elif llm in ANTHROPIC_MODELS and (
+                            anthropic_api_key or (openai_api_key and openai_base_url)
+                        ):
+                            can_execute = True
+                        elif llm in GEMINI_MODELS and (
+                            gemini_api_key or (openai_api_key and openai_base_url)
+                        ):
+                            can_execute = True
+
+                        if can_execute:
+                            num_variants = (
+                                2 if generation_type == "update" else NUM_VARIANTS
+                            )
+                            print(
+                                f"Using user-selected model for all {num_variants} "
+                                f"variants: {code_generation_model}"
+                            )
+                            return [llm] * num_variants
+                        else:
+                            print(
+                                f"Selected model '{code_generation_model}' cannot be executed "
+                                "with current keys/proxies. Falling back to key-based selection."
+                            )
+                            break
 
             # 3. Legacy: pick based on which API keys are available.
             num_variants = 2 if generation_type == "update" else NUM_VARIANTS
@@ -902,6 +920,7 @@ class CodeGenerationMiddleware(Middleware):
                 gemini_api_key=context.extracted_params.gemini_api_key,
                 variant_model_configs=context.extracted_params.variant_model_configs,
                 code_generation_model=context.extracted_params.code_generation_model,
+                openai_base_url=context.extracted_params.openai_base_url,
             )
             if IS_DEBUG_ENABLED:
                 await context.send_message(
