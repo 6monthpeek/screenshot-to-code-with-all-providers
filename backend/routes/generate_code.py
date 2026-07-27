@@ -507,6 +507,7 @@ class ModelSelectionStage:
                 openai_api_key,
                 anthropic_api_key,
                 gemini_api_key,
+                openai_base_url,
             )
 
             # Print the variant models (one per line)
@@ -531,6 +532,7 @@ class ModelSelectionStage:
         openai_api_key: str | None,
         anthropic_api_key: str | None,
         gemini_api_key: str | None,
+        openai_base_url: str | None = None,
     ) -> List[Llm]:
         """Simple model cycling that scales with num_variants"""
 
@@ -562,7 +564,10 @@ class ModelSelectionStage:
         elif anthropic_api_key:
             models = list(ANTHROPIC_ONLY_MODELS)
         elif openai_api_key:
-            models = list(OPENAI_ONLY_MODELS)
+            if openai_base_url:
+                models = [Llm.OMNIR_GEMINI_3_6_FLASH_HIGH]
+            else:
+                models = list(OPENAI_ONLY_MODELS)
         else:
             raise Exception("No OpenAI or Anthropic key")
 

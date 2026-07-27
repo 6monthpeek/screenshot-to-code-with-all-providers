@@ -352,6 +352,19 @@ function App() {
         }
       }
     }
+
+    // If an OpenAI proxy / OmniRoute base URL is active and the user hasn't explicitly
+    // selected a custom model, default the code generation model to OmniRoute Gemini 3.6 Flash.
+    const currentModel = settings.codeGenerationModel || "";
+    if (
+      updatedParams.openAiBaseURL &&
+      (!currentModel ||
+        currentModel.startsWith("gpt-5") ||
+        currentModel.startsWith("gemini-3"))
+    ) {
+      updatedParams.codeGenerationModel =
+        CodeGenerationModel.OMNIR_GEMINI_3_6_FLASH_HIGH;
+    }
     if (!settings.anthropicApiKey) {
       const defaultProvider = settings.providers.find(
         (p) => p.enabled && p.family === "anthropic"
