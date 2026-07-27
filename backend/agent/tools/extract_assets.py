@@ -1,5 +1,8 @@
 import base64
+import io
 from typing import Any, Dict, List, Optional, cast
+
+from PIL import Image
 
 from asset_extraction import extract_assets_from_images
 from uploaded_assets.store import persist_data_url_as_asset
@@ -14,6 +17,42 @@ IMAGE_EXTENSION_BY_MIME_TYPE = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+
+# Cap extracted-asset dimensions before they enter conversation history:
+# a 1024x1024 PNG crop base64s to ~350k tokens, so a handful of assets plus
+# the source screenshot overflows a 1M context window within a few turns.
+# 512px keeps logos/icons crisp while cutting base64 size ~4x.
+MAX_ASSET_DIMENSION = 512
+
+
+def _shrink_image_bytes(data: bytes, mime_type: str) -> tuple[bytes, str]:
+    """Downscale an image so no side exceeds MAX_ASSET_DIMENSION.
+
+    Returns (bytes, mime_type). Falls back to the original bytes on any
+    decode/encode failure so extraction never breaks over an odd crop.
+    """
+    try:
+        img = Image.open(io.BytesIO(data))
+    except Exception:
+        return data, mime_type
+
+    w, h = img.size
+    if max(w, h) <= MAX_ASSET_DIMENSION:
+        return data, mime_type
+
+    scale = MAX_ASSET_DIMENSION / max(w, h)
+    new_size = (max(1, round(w * scale)), max(1, round(h * scale)))
+    img = img.resize(new_size, Image.LANCZOS)
+
+    has_alpha = img.mode in ("RGBA", "LA", "P") and (
+        img.mode != "P" or "transparency" in img.info
+    )
+    buf = io.BytesIO()
+    if has_alpha:
+        img.save(buf, format="PNG", optimize=True)
+        return buf.getvalue(), "image/png"
+    img.convert("RGB").save(buf, format="JPEG", quality=88, optimize=True)
+    return buf.getvalue(), "image/jpeg"
 
 
 def _image_data_url_to_multimodal_part(
@@ -32,6 +71,8 @@ def _image_data_url_to_multimodal_part(
         data = base64.b64decode(encoded, validate=True)
     except ValueError:
         return None
+
+    data, mime_type = _shrink_image_bytes(data, mime_type)
 
     return ToolMultimodalPart(
         display_name=display_name,

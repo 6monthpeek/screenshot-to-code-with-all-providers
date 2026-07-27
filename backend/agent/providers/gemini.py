@@ -401,6 +401,33 @@ class GeminiProviderSession(ProviderSession):
                 print(f"[gemini] failed to fetch tool image {part.image_url}: {exc}")
         return None, part.mime_type
 
+    def _prune_older_tool_images(self, keep_last_n: int = 2) -> None:
+        """Strip inline_data from function_response parts older than the last N.
+        Same rationale as the OpenAI session: cumulative base64 crops overflow
+        the context window on asset-heavy runs. The text response (with
+        public_url values) is preserved; only the binary blobs are dropped."""
+        if keep_last_n <= 0:
+            return
+
+        content_indexes: List[int] = []
+        for idx, content in enumerate(self._contents):
+            parts = getattr(content, "parts", None) or []
+            for part in parts:
+                fr = getattr(part, "function_response", None)
+                if fr is None:
+                    continue
+                if getattr(fr, "parts", None):
+                    content_indexes.append(idx)
+                    break
+
+        to_prune = content_indexes[:-keep_last_n]
+        for idx in to_prune:
+            content = self._contents[idx]
+            for part in getattr(content, "parts", None) or []:
+                fr = getattr(part, "function_response", None)
+                if fr is not None and getattr(fr, "parts", None):
+                    fr.parts = []
+
     async def append_tool_results(
         self,
         turn: ProviderTurn,
@@ -413,6 +440,9 @@ class GeminiProviderSession(ProviderSession):
             )
 
         self._contents.append(model_content)
+
+        # Drop stale inline crops before adding the new turn's images.
+        self._prune_older_tool_images()
 
         tool_result_parts: List[types.Part] = []
         for executed in executed_tool_calls:

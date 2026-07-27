@@ -493,6 +493,46 @@ class OpenAIProviderSession(ProviderSession):
             return f"data:{part.mime_type};base64,{encoded}"
         return None
 
+    def _prune_older_tool_images(self, keep_last_n: int = 2) -> None:
+        """Replace base64 tool-result images older than the last N with a text
+        stub. The model already received each image when its tool returned; the
+        structured result keeps public_url/display_name, so old crops can be
+        dropped from history without losing information. This stops cumulative
+        base64 from overflowing the context window on asset-heavy runs."""
+        if keep_last_n <= 0:
+            return
+
+        image_item_indexes: List[int] = []
+        for idx, item in enumerate(self._input_items):
+            if not isinstance(item, dict) or item.get("type") != "function_call_output":
+                continue
+            output = item.get("output")
+            if not isinstance(output, list):
+                continue
+            if any(
+                isinstance(part, dict) and part.get("type") == "input_image"
+                for part in output
+            ):
+                image_item_indexes.append(idx)
+
+        to_prune = image_item_indexes[:-keep_last_n]
+        for idx in to_prune:
+            item = self._input_items[idx]
+            output = item["output"]
+            pruned_parts: List[Dict[str, Any]] = []
+            for part in output:
+                if isinstance(part, dict) and part.get("type") == "input_image":
+                    continue
+                pruned_parts.append(part)
+            pruned_parts.append(
+                {
+                    "type": "input_text",
+                    "text": "[earlier asset images omitted from history to "
+                    "conserve context; see public_url values above]",
+                }
+            )
+            item["output"] = pruned_parts
+
     async def append_tool_results(
         self,
         turn: ProviderTurn,
@@ -501,6 +541,9 @@ class OpenAIProviderSession(ProviderSession):
         assistant_output_items = turn.assistant_turn or []
         if assistant_output_items:
             self._input_items.extend(assistant_output_items)
+
+        # Drop stale base64 crops before adding the new turn's images.
+        self._prune_older_tool_images()
 
         image_detail = _get_image_detail_for_model(self._model)
         tool_output_items: List[Dict[str, Any]] = []
