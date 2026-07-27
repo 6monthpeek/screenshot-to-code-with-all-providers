@@ -845,9 +845,20 @@ class StatusBroadcastMiddleware(Middleware):
         assert context.extracted_params is not None
         is_video_mode = context.extracted_params.input_mode == "video"
         is_update = context.extracted_params.generation_type == "update"
-        num_variants = (
-            NUM_VARIANTS_VIDEO if is_video_mode else 2 if is_update else NUM_VARIANTS
-        )
+
+        # If the frontend sent per-variant configs, honor that exact count —
+        # running more variants than the user configured wastes API calls
+        # against providers they didn't pick.
+        if context.extracted_params.variant_model_configs:
+            num_variants = len(context.extracted_params.variant_model_configs)
+        else:
+            num_variants = (
+                NUM_VARIANTS_VIDEO
+                if is_video_mode
+                else 2
+                if is_update
+                else NUM_VARIANTS
+            )
 
         # Tell frontend how many variants we're using
         await context.send_message("variantCount", str(num_variants), 0)

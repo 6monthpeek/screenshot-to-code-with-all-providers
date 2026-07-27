@@ -148,24 +148,42 @@ def print_prompt_preview(prompt_messages: List[ChatCompletionMessageParam]) -> N
     title = "PROMPT PREVIEW"
     max_length = max(max_length, len(title) + 4)
 
-    print("┌─" + "─" * max_length + "─┐")
+    # On Windows the default console code page (cp125x) cannot render the
+    # box-drawing characters below. Fall back to ASCII when stdout cannot
+    # encode them.
+    import sys
+
+    def _can_encode(s: str) -> bool:
+        enc = sys.stdout.encoding or "utf-8"
+        try:
+            s.encode(enc)
+            return True
+        except (UnicodeEncodeError, LookupError):
+            return False
+
+    if _can_encode("┌─┐│└┘├┤"):
+        TL, H, V, TR, ML, MR, BL, BR = "┌", "─", "│", "┐", "├", "┤", "└", "┘"
+    else:
+        TL, H, V, TR, ML, MR, BL, BR = "+", "-", "|", "+", "+", "+", "+", "+"
+
+    print(TL + H * (max_length + 2) + TR)
     title_padding = (max_length - len(title)) // 2
     print(
-        f"│ {' ' * title_padding}{title}{' ' * (max_length - len(title) - title_padding)} │"
+        f"{V} {' ' * title_padding}{title}{' ' * (max_length - len(title) - title_padding)} {V}"
     )
-    print("├─" + "─" * max_length + "─┤")
+    print(ML + H * (max_length + 2) + MR)
 
     for line in lines:
         if len(line) <= max_length:
-            print(f"│ {line:<{max_length}} │")
+            print(f"{V} {line:<{max_length}} {V}")
         else:
             wrapped = textwrap.wrap(
                 line, width=max_length, break_long_words=False, break_on_hyphens=False
             )
             for wrapped_line in wrapped:
-                print(f"│ {wrapped_line:<{max_length}} │")
+                print(f"{V} {wrapped_line:<{max_length}} {V}")
 
-    print("└─" + "─" * max_length + "─┘")
+    print(BL + H * (max_length + 2) + BR)
     print()
 
 
