@@ -162,7 +162,7 @@ If changes touch both, run both sets.
   not `http://127.0.0.1:5173` (the latter refuses the connection).
 - Frontend talks to the backend over a WebSocket (`VITE_WS_BACKEND_URL`, default
   `ws://127.0.0.1:7001`); generation streams over that socket, other routes are plain HTTP.
-- Windows convenience: `start-dev.bat` at the repo root launches both servers.
+- Windows convenience: `start.bat` at the repo root launches both servers in a single terminal (via root `pnpm dev` / concurrently), cleans stale ports and opens the browser.
 
 # Hosted
 

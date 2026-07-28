@@ -63,7 +63,17 @@ CDN); the project export converts it into a runnable Vite project afterwards.
 The app is a React/Vite frontend (`:5173`) talking to a FastAPI backend
 (`:7001`) over a WebSocket.
 
+> **One-command start:** `pnpm install && pnpm dev` at the repo root runs both
+> servers in a single terminal with `[backend]` / `[frontend]` prefixed logs
+> (Ctrl+C stops both). On Windows, double-clicking `start.bat` does the
+> same plus stale-port cleanup and opens the browser automatically.
+
 ### 1. Credentials
+
+**No `.env` file needed.** Start the app, click the gear icon (Settings) and
+paste your key(s) there — you can also add any number of custom providers
+(gateways, local model servers) and assign them to variant slots, all from
+the UI.
 
 You need **at least one** working model source. That can be:
 
@@ -80,9 +90,15 @@ You need **at least one** working model source. That can be:
 | `GEMINI_API_KEY` | one of these — **recommended** | Gemini variants, real asset extraction from screenshots, video mode |
 | `REPLICATE_API_KEY` | recommended | Image generation, editing and background removal |
 
-Keys can also be entered in the in-app Settings dialog (gear icon), where you
-can add any number of custom providers and assign them to variant slots.
-`REPLICATE_API_KEY` works via `backend/.env` only.
+Prefer environment variables (e.g. on a server or in CI)? Everything also
+works from `backend/.env` — the one exception is `REPLICATE_API_KEY`, which
+currently works via `backend/.env` only:
+
+```bash
+# backend/.env (optional — the Settings dialog covers everything else)
+OPENAI_API_KEY=sk-your-key
+REPLICATE_API_KEY=r8-your-key
+```
 
 > Never commit real keys. `backend/.env` is gitignored; the E2E scripts read
 > `OMNIROUTE_API_KEY` / `OPENAI_API_KEY` from the environment.
@@ -91,7 +107,6 @@ can add any number of custom providers and assign them to variant slots.
 
 ```bash
 cd backend
-echo "OPENAI_API_KEY=sk-your-key" > .env
 poetry install
 # Chromium for the optional screenshot-preview tool (agent checks its own work):
 poetry run playwright install chromium
@@ -112,9 +127,11 @@ Open http://localhost:5173. If the backend runs elsewhere, set
 ### Docker
 
 ```bash
-echo "OPENAI_API_KEY=sk-your-key" > .env
 docker-compose up -d --build
 ```
+
+Then open http://localhost:5173 and enter your keys in Settings (or put them
+in a root `.env` before `docker-compose up` if you prefer).
 
 ## Using a gateway (OmniRoute / OpenRouter / local models)
 
