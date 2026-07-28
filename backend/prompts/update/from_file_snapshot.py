@@ -47,7 +47,7 @@ You are editing an existing file.
             ChatCompletionMessageParam,
             {
                 "role": "system",
-                "content": system_prompt.SYSTEM_PROMPT,
+                "content": system_prompt.build_system_prompt(stack),
             },
         ),
         build_history_message(

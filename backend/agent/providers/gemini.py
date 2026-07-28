@@ -383,6 +383,9 @@ class GeminiProviderSession(ProviderSession):
             return None
         return self._total_usage.cost(pricing)
 
+    def total_usage(self) -> TokenUsage:
+        return self._total_usage
+
     @staticmethod
     async def _resolve_part_bytes(part: Any) -> tuple[bytes | None, str]:
         """Gemini only accepts inline bytes, so download public URLs."""
@@ -472,6 +475,19 @@ class GeminiProviderSession(ProviderSession):
             )
 
         self._contents.append(types.Content(role="user", parts=tool_result_parts))
+
+    async def append_user_turn(
+        self,
+        turn: Optional[ProviderTurn],
+        text: str,
+    ) -> None:
+        if turn is not None:
+            model_content = turn.assistant_turn
+            if isinstance(model_content, types.Content) and model_content.parts:
+                self._contents.append(model_content)
+        self._contents.append(
+            types.Content(role="user", parts=[types.Part(text=text)])
+        )
 
     async def close(self) -> None:
         u = self._total_usage

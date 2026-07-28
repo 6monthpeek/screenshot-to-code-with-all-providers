@@ -1,14 +1,23 @@
 import asyncio
 import traceback
 import uuid
-from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, cast
 
 from openai.types.chat import ChatCompletionMessageParam
 
-from codegen.utils import extract_html_content
+from codegen.utils import (
+    build_fallback_document,
+    check_stack_compliance,
+    extract_html_content,
+)
 from llm import Llm
 
-from agent.providers.base import ExecutedToolCall, ProviderSession, StreamEvent
+from agent.providers.base import (
+    ExecutedToolCall,
+    ProviderSession,
+    ProviderTurn,
+    StreamEvent,
+)
 from agent.providers.factory import create_provider_session
 from agent.state import AgentFileState, seed_file_state_from_messages
 from agent.tools import (
@@ -19,7 +28,12 @@ from agent.tools import (
     summarize_tool_input,
 )
 from config import GENERATION_MAX_COST_USD
+from costs.token_usage import TokenUsage
 from fs_logging.agent_runs import AgentRunRecorder
+from prompts.policies import build_stack_repair_message
+
+if TYPE_CHECKING:
+    from agent.variant_config import VariantModelConfig
 
 
 class EmptyOutputError(Exception):
@@ -67,10 +81,12 @@ class AgentEngine:
         initial_file_state: Optional[Dict[str, str]] = None,
         option_codes: Optional[List[str]] = None,
         recorder: Optional[AgentRunRecorder] = None,
+        stack: Optional[str] = None,
     ):
         self.send_message = send_message
         self.variant_index = variant_index
         self.recorder = recorder
+        self.stack = stack
         self.openai_api_key = openai_api_key
         self.openai_base_url = openai_base_url
         self.anthropic_api_key = anthropic_api_key
@@ -95,6 +111,13 @@ class AgentEngine:
             option_codes=option_codes,
         )
         self._tool_preview_lengths: Dict[str, int] = {}
+        # Final assistant turn of the last completed loop; consumed by the
+        # stack-repair pass to continue the session past a final answer.
+        self._last_turn: Optional[ProviderTurn] = None
+        # Cost/usage of the last run(); captured before the session closes so
+        # the caller can surface per-variant spend (None when unpriced).
+        self.last_cost_usd: Optional[float] = None
+        self.last_token_usage: Optional[TokenUsage] = None
 
     def _build_session(
         self,
@@ -352,6 +375,7 @@ class AgentEngine:
             turn = await session.stream_turn(on_event)
 
             if not turn.tool_calls:
+                self._last_turn = turn
                 return await self._finalize_response(turn.assistant_text)
 
             # Abort only when the run would otherwise continue: a run that
@@ -442,6 +466,14 @@ class AgentEngine:
 
             if not result:
                 raise EmptyOutputError()
+            if not check_stack_compliance(result, self.stack):
+                print(
+                    f"[STACK] Variant {self.variant_index} output does not appear "
+                    f"to follow the selected stack '{self.stack}'. Attempting repair."
+                )
+                repaired = await self._attempt_stack_repair(session)
+                if repaired is not None:
+                    result = repaired
             if self.recorder is not None:
                 await self.recorder.record_run_end("completed", final_html=result)
             return result
@@ -457,7 +489,41 @@ class AgentEngine:
                 )
             raise
         finally:
+            # Capture spend before closing: providers reset nothing on close,
+            # but the session object is unreachable to callers after run().
+            try:
+                self.last_cost_usd = session.total_cost_usd()
+                self.last_token_usage = session.total_usage()
+            except Exception:
+                pass
             await session.close()
+
+    async def _attempt_stack_repair(self, session: ProviderSession) -> Optional[str]:
+        """One-shot follow-up turn asking the model to convert its output
+        to the selected stack. Best effort: any failure keeps the original
+        (non-compliant but working) output instead of failing the variant.
+        """
+        if not self.stack:
+            return None
+        try:
+            await self._send("status", "Adjusting output to match the selected stack...")
+            await session.append_user_turn(
+                self._last_turn, build_stack_repair_message(self.stack)
+            )
+            repaired = await self._run_with_session(session)
+        except Exception as exc:
+            print(
+                f"[STACK] Variant {self.variant_index} repair attempt failed: {exc}"
+            )
+            return None
+        if repaired and check_stack_compliance(repaired, self.stack):
+            print(f"[STACK] Variant {self.variant_index} repaired successfully.")
+            return repaired
+        print(
+            f"[STACK] Variant {self.variant_index} repair did not produce a "
+            f"compliant document; keeping the original output."
+        )
+        return None
 
     async def _finalize_response(self, assistant_text: str) -> str:
         if self.file_state.content:
@@ -469,7 +535,11 @@ class AgentEngine:
         html = extract_html_content(assistant_text)
         if not html or len(html.strip()) < 10:
             clean_text = assistant_text.strip()
-            html = f"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <script src=\"https://cdn.tailwindcss.com\"></script>\n</head>\n<body className=\"bg-slate-900 text-white flex items-center justify-center min-h-screen\">\n  <div className=\"p-8 rounded-xl bg-slate-800 border border-slate-700 text-center max-w-md\">\n    <h1 className=\"text-2xl font-bold mb-4\">Generated Design</h1>\n    <p className=\"text-slate-300\">{clean_text}</p>\n  </div>\n</body>\n</html>"
+            inner = (
+                '  <div class="p-8 rounded-xl text-center max-w-md mx-auto">\n'
+                f"    <h1>Generated Design</h1>\n    <p>{clean_text}</p>\n  </div>"
+            )
+            html = build_fallback_document(inner, self.stack)
 
         self.file_state.content = html
         await self._send("setCode", html)

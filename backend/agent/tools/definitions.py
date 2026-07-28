@@ -15,7 +15,11 @@ def _create_schema() -> Dict[str, Any]:
             },
             "content": {
                 "type": "string",
-                "description": "Full HTML for the single-file app.",
+                "description": (
+                    "Full HTML for the single-file app. The markup and scripts "
+                    "must follow the selected stack from the system prompt "
+                    "(e.g. React/JSX via Babel when the React stack is selected)."
+                ),
             },
         },
         "required": ["content"],
@@ -181,7 +185,8 @@ def canonical_tool_definitions(
             name="create_file",
             description=(
                 "Create the main HTML file for the app. Use exactly once to write the "
-                "full HTML. Returns a success message and file metadata."
+                "full HTML, following the selected stack from the system prompt. "
+                "Returns a success message and file metadata."
             ),
             parameters=_create_schema(),
         ),

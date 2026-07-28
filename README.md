@@ -1,94 +1,104 @@
-# screenshot-to-code-with-all-providers
+# Screenshot to Code — All Providers Edition
 
-> **Fork of [abi/screenshot-to-code](https://github.com/abi/screenshot-to-code) with multi-provider support and per-variant model selection.**
->
-> Adds:
-> - **Generic provider registry** — any OpenAI-compatible endpoint (OmniRoute, OpenRouter, Groq, Together, Fireworks, Novita, z.ai, NVIDIA NIM, Ollama, LM Studio, vLLM, SGLang, etc.), Anthropic, and Gemini side-by-side.
-> - **Per-variant model selection** — each generation slot can use a different provider+model, configured from the Settings panel.
-> - **Provider manager UI** — add/remove/toggle providers, set custom base URLs, label them.
-> - **Variant builder UI** — pick the provider and model id for each variant slot.
-
-Convert screenshots, mockups, Figma designs, and screen recordings into clean, functional code using AI. The easiest way to try the upstream product is using <a href="https://screenshottocode.com/?utm_source=github&utm_medium=readme&utm_campaign=oss_readme&utm_content=top_cta" target="_blank" rel="noopener noreferrer">the official, hosted product at screenshottocode.com →</a>
-
+> A heavily reworked fork of [abi/screenshot-to-code](https://github.com/abi/screenshot-to-code):
+> screenshots, mockups and screen recordings become working code — through **any**
+> model provider you choose, with per-variant model selection, cost tracking and
+> measurable output quality.
 
 https://github.com/user-attachments/assets/ec08a5e6-9606-41c5-b03a-1bf47dfeba75
 
+## Why we rebuilt this repo
 
-Supported stacks:
+The upstream project is excellent, but it is built around a fixed, hardcoded set
+of official providers (OpenAI, Anthropic, Gemini). In practice that model no
+longer matches how people actually run LLMs today:
 
-- HTML + Tailwind
-- HTML + CSS
-- React + Tailwind
-- Vue + Tailwind
-- Bootstrap
-- Ionic + Tailwind
+- **Models live behind gateways now.** OmniRoute, OpenRouter, Groq, Together,
+  Fireworks, Ollama, LM Studio, vLLM — most teams reach models through an
+  OpenAI-compatible endpoint, not through three official SDKs. Upstream had no
+  first-class way to say *"use this base URL with this model id"*.
+- **One model per run is a wasted comparison.** The app generates several
+  variants in parallel, but upstream picks the models for you. We wanted each
+  variant slot to be independently configurable — GPT vs Claude vs a local
+  model, side by side, from the UI.
+- **No visibility into cost or quality.** Generations ran with no token/cost
+  accounting per variant, no budget ceiling, and no objective measure of how
+  close the output looks to the input screenshot.
+- **Single-file output stopped at the demo stage.** The generated HTML file is
+  great for previewing, but there was no path from "demo file" to "runnable
+  Vite project" or a component library.
 
-Default AI models:
+So instead of maintaining a thin patch set, we changed the architecture where
+it mattered: a generic provider registry, per-variant model configs threaded
+end-to-end through the WebSocket pipeline, an agentic tool-calling engine with
+stack enforcement and repair, plus measurement (visual scores, cost badges,
+eval metrics) so changes can be verified instead of eyeballed.
 
-- Gemini 3 Flash Preview and Gemini 3.1 Pro Preview - the best models
-- GPT-5.5 and GPT-5.4 Mini
-- Claude Opus 4.6, Claude Opus 4.8
-- z-image-turbo (using Replicate) for image generation
+## What this fork adds on top of upstream
 
-See the [Examples](#-examples) section below for more demos.
+| Area | Upstream | This fork |
+|------|----------|-----------|
+| Providers | OpenAI, Anthropic, Gemini (hardcoded) | Any OpenAI-compatible endpoint (OmniRoute, OpenRouter, Groq, Ollama, LM Studio, vLLM, …) + Anthropic + Gemini, managed from a **Provider Manager UI** |
+| Model choice | Fixed model mix | **Per-variant model selection** via the Variant Builder UI — each generation slot gets its own provider, model id, base URL and key |
+| Gateway support | Basic `OPENAI_BASE_URL` proxying | First-class gateway sessions: streamed tool calling, `include_usage` token accounting, transient-error retries with backoff, connect timeouts, gateway-aware error messages, graceful fallback when a native key is missing |
+| Cost | None | Per-variant token/cost badges in the UI, `$` budget ceiling per generation (`GENERATION_MAX_COST_USD`), priced gateway model ids |
+| Output quality | Manual inspection | **Visual similarity score** per variant (rendered output vs input screenshot), stack-compliance metric in the eval harness |
+| Stack fidelity | Prompt-only | Per-stack system prompts + post-generation **stack repair pass** (non-compliant output triggers one conversion turn) + stack-aware fallback documents |
+| Export | Single HTML file | **Deterministic Vite project export**: package.json/toolchain scaffold, JSX extraction into `src/main.jsx`, automatic **component split** into `src/components/*.jsx` |
+| Multi-screenshot input | One page per run | Multiple screenshots become a **multi-page app** in one file (hash-based navigation, shared nav) |
+| Tests | Sparse | 350+ backend unit tests covering the provider sessions, prompt pipeline, stack system, export, scoring and eval metrics |
 
-Screenshot to Code also supports taking a screen recording of a website in action and turning that into a functional prototype.
+Everything is documented for agents and humans alike in
+[AGENTS.md](./AGENTS.md) (architecture map, invariants, testing policy).
 
-![google in app quick 3](https://github.com/abi/screenshot-to-code/assets/23818/8758ffa4-9483-4b9b-bb66-abd6d1594c33)
+## Supported stacks
 
-## 🛠 Getting Started
+HTML + Tailwind · HTML + CSS · React + Tailwind · Vue + Tailwind · Bootstrap · Ionic + Tailwind
 
-Choose the path that fits what you want to do:
+Generation always produces a single self-contained HTML file (frameworks via
+CDN); the project export converts it into a runnable Vite project afterwards.
 
-- **Run locally:** best if you want to customize, self-host, or contribute.
-- **Use the hosted app:** the fastest way to try Screenshot to Code with no local setup. <a href="https://screenshottocode.com/?utm_source=github&utm_medium=readme&utm_campaign=oss_readme&utm_content=getting_started_cta" target="_blank" rel="noopener noreferrer">Open the hosted app →</a>
+## Getting started
 
-Running locally requires API keys and a backend/frontend setup. The app has a React/Vite frontend and a FastAPI backend.
+The app is a React/Vite frontend (`:5173`) talking to a FastAPI backend
+(`:7001`) over a WebSocket.
 
-### API keys
+### 1. Credentials
 
-You need **at least one** model provider key (OpenAI, Anthropic, or Gemini).
-**Gemini and Replicate are strongly recommended for the best quality of
-screenshot-to-code accuracy** — Gemini powers asset extraction (reusing the
-real logos/images from your screenshot) and Replicate powers image
-generation, background removal, and image editing. Adding all four keys gives
-the best results and lets you compare multiple models per generation.
+You need **at least one** working model source. That can be:
+
+- an official key: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, **or**
+- any OpenAI-compatible gateway: set `OPENAI_BASE_URL` (e.g.
+  `http://localhost:20128/v1` for a local OmniRoute) plus its key, **or**
+- a local model server (Ollama, LM Studio): point a provider at its base URL —
+  no real key required.
 
 | Key | Required? | What it unlocks |
 |-----|-----------|-----------------|
-| `OPENAI_API_KEY` | One of these three | GPT code-gen variants (GPT-5.5, GPT-5.4 Mini) |
-| `ANTHROPIC_API_KEY` | One of these three | Claude code-gen variants (Opus 5, Opus 4.8, Fable 5, Sonnet 4.6) |
-| `GEMINI_API_KEY` | One of these three — **strongly recommended** | Gemini code-gen variants (3 Flash, 3.1 Pro); extracts real assets from the screenshot; required for video mode |
-| `REPLICATE_API_KEY` | **Strongly recommended** | Image editing, background removal, and Replicate-backed image generation — without it, `edit_image` and `remove_background` are unavailable, and image generation falls back to OpenAI if configured |
+| `OPENAI_API_KEY` (+ optional `OPENAI_BASE_URL`) | one of these | GPT variants, or *any* model behind an OpenAI-compatible gateway |
+| `ANTHROPIC_API_KEY` | one of these | Claude code-gen variants |
+| `GEMINI_API_KEY` | one of these — **recommended** | Gemini variants, real asset extraction from screenshots, video mode |
+| `REPLICATE_API_KEY` | recommended | Image generation, editing and background removal |
 
-With more keys, the app automatically picks a stronger mix of models per
-variant; with a single key it uses that provider's models only.
+Keys can also be entered in the in-app Settings dialog (gear icon), where you
+can add any number of custom providers and assign them to variant slots.
+`REPLICATE_API_KEY` works via `backend/.env` only.
 
-If you'd like to run the app with Ollama open-source models (not recommended due to poor-quality results), [follow this comment](https://github.com/abi/screenshot-to-code/issues/354#issuecomment-2435479853).
+> Never commit real keys. `backend/.env` is gitignored; the E2E scripts read
+> `OMNIROUTE_API_KEY` / `OPENAI_API_KEY` from the environment.
 
-Run the backend (I use Poetry for package management; run `pip install --upgrade poetry` if you don't have it):
+### 2. Backend
 
 ```bash
 cd backend
 echo "OPENAI_API_KEY=sk-your-key" > .env
-echo "ANTHROPIC_API_KEY=your-key" >> .env
-echo "GEMINI_API_KEY=your-key" >> .env
-echo "REPLICATE_API_KEY=r8_your-key" >> .env
 poetry install
-# Install the Chromium browser used by the screenshot preview tool.
-# On Linux, use `poetry run playwright install --with-deps chromium` to also
-# install the required system libraries (needs sudo/apt).
+# Chromium for the optional screenshot-preview tool (agent checks its own work):
 poetry run playwright install chromium
-poetry env activate
-# run the printed command, e.g. source /path/to/venv/bin/activate
 poetry run uvicorn main:app --reload --port 7001
 ```
 
-You can also set up OpenAI, Anthropic, and Gemini keys using the settings dialog in the frontend (click the gear icon after loading the app). Replicate must be configured in `backend/.env` as `REPLICATE_API_KEY`. The Settings dialog also shows whether **screenshot preview** is available on your backend.
-
-> **Screenshot preview** (optional) lets the agent render its own generated page in a headless browser and visually check its work. It's enabled automatically once Chromium is installed (the `playwright install chromium` step above, or automatically in the Docker image). If Chromium is missing, the app just skips the tool — the Settings dialog shows whether it's available.
-
-Run the frontend:
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -96,44 +106,40 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:5173 to use the app.
+Open http://localhost:5173. If the backend runs elsewhere, set
+`VITE_WS_BACKEND_URL` / `VITE_HTTP_BACKEND_URL` in `frontend/.env.local`.
 
-If you prefer to run the backend on a different port, update `VITE_WS_BACKEND_URL` in `frontend/.env.local`.
-
-## Docker
-
-If you have Docker installed, run this from the root directory:
+### Docker
 
 ```bash
 echo "OPENAI_API_KEY=sk-your-key" > .env
 docker-compose up -d --build
 ```
 
-The app will be up and running at http://localhost:5173. Note that you can't develop the application with this setup, as file changes won't trigger a rebuild.
+## Using a gateway (OmniRoute / OpenRouter / local models)
 
-## 🙋‍♂️ FAQs
+1. Open Settings → Provider Manager → add a provider with its base URL
+   (e.g. `http://localhost:20128/v1`) and key.
+2. Open the Variant Builder and assign a `model_id` per variant slot
+   (e.g. `antigravity/gemini-3.6-flash-high`, `auto/best-coding`).
+3. Generate — each variant streams from its own provider, with token/cost
+   badges when the gateway reports usage.
 
-- **I'm running into an error when setting up the backend. How can I fix it?** [Try this](https://github.com/abi/screenshot-to-code/issues/3#issuecomment-1814777959). If that still doesn't work, open an issue.
-- **How do I get an OpenAI API key?** See https://github.com/abi/screenshot-to-code/blob/main/Troubleshooting.md
-- **How can I configure an OpenAI proxy?** If you're not able to access the OpenAI API directly, for example because of country restrictions, you can try a VPN or configure the OpenAI base URL to use a proxy. Set `OPENAI_BASE_URL` in `backend/.env` or directly in the UI in the settings dialog. Make sure the URL has `v1` in the path, for example: `https://xxx.xxxxx.xxx/v1`.
-- **How can I update the backend host that my frontend connects to?** Configure `VITE_HTTP_BACKEND_URL` and `VITE_WS_BACKEND_URL` in `frontend/.env.local`. For example, set `VITE_HTTP_BACKEND_URL=http://124.10.20.1:7001`.
-- **Seeing UTF-8 errors when running the backend?** On Windows, open the `.env` file with Notepad++, then go to Encoding and select UTF-8.
-- **How can I provide feedback?** For feedback, feature requests, and bug reports, open an issue or ping me on [Twitter](https://twitter.com/_abi_).
+Anthropic/Gemini model choices automatically fall back to the gateway when
+only a gateway credential is configured.
 
-## 📚 Examples
+## Testing
 
-**NYTimes**
+```bash
+cd backend && poetry run pytest      # 350+ unit tests
+cd backend && poetry run pyright     # type checking
+cd frontend && pnpm lint
+```
 
-| Original                                                                                                                                                        | Replica                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img width="1238" alt="Screenshot 2023-11-20 at 12 54 03 PM" src="https://github.com/user-attachments/assets/6b0ae86c-1b0f-4598-a578-c7b62205b3e2"> | <img width="1435" height="737" alt="Screenshot 2026-06-15 at 3 06 37 PM" src="https://github.com/user-attachments/assets/48f0ab94-5fdc-41e7-ad6e-b4ad7ef69ae1" /> |
+## Credits & license
 
-
-**Instagram**
-
-https://github.com/user-attachments/assets/a335a105-f9cc-40e6-ac6b-64e5390bfc21
-
-**Hacker News**
-
-
-https://github.com/user-attachments/assets/205cb5c7-9c3c-438d-acd4-26dfe6e077e5
+Built on [abi/screenshot-to-code](https://github.com/abi/screenshot-to-code) —
+all credit for the original product concept and foundation goes to its authors.
+The easiest way to try the upstream product is the hosted app at
+[screenshottocode.com](https://screenshottocode.com). Licensed under the same
+terms as upstream (see [LICENSE](./LICENSE)).

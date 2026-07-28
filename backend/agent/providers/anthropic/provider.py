@@ -413,6 +413,9 @@ class AnthropicProviderSession(ProviderSession):
             return None
         return self._total_usage.cost(pricing)
 
+    def total_usage(self) -> TokenUsage:
+        return self._total_usage
+
     def _image_block(self, part: Any) -> Dict[str, Any] | None:
         """A public URL goes as a url source; local bytes go as base64."""
         if part.image_url:
@@ -492,6 +495,36 @@ class AnthropicProviderSession(ProviderSession):
 
         self._messages.append({"role": "user", "content": tool_result_blocks})
         self._ensure_many_image_dimension_limit()
+
+    async def append_user_turn(
+        self,
+        turn: Optional[ProviderTurn],
+        text: str,
+    ) -> None:
+        assistant_blocks: List[Dict[str, Any]] = []
+        if turn is not None:
+            if turn.assistant_text:
+                assistant_blocks.append(
+                    {"type": "text", "text": turn.assistant_text}
+                )
+            for call in turn.tool_calls:
+                assistant_blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call.id,
+                        "name": call.name,
+                        "input": call.arguments,
+                    }
+                )
+        # Claude rejects assistant messages with empty content, so only
+        # persist the turn when it produced blocks.
+        if assistant_blocks:
+            self._messages.append(
+                {"role": "assistant", "content": assistant_blocks}
+            )
+        self._messages.append(
+            {"role": "user", "content": [{"type": "text", "text": text}]}
+        )
 
     async def close(self) -> None:
         u = self._total_usage

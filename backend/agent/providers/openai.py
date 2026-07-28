@@ -483,6 +483,9 @@ class OpenAIProviderSession(ProviderSession):
             return None
         return self._total_usage.cost(pricing)
 
+    def total_usage(self) -> TokenUsage:
+        return self._total_usage
+
     @staticmethod
     def _image_ref(part: Any) -> str | None:
         """A public URL is sent as-is; local bytes become a base64 data URL."""
@@ -575,6 +578,20 @@ class OpenAIProviderSession(ProviderSession):
                 }
             )
         self._input_items.extend(tool_output_items)
+
+    async def append_user_turn(
+        self,
+        turn: Optional[ProviderTurn],
+        text: str,
+    ) -> None:
+        if turn is not None and turn.assistant_turn:
+            self._input_items.extend(turn.assistant_turn)
+        self._input_items.append(
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}],
+            }
+        )
 
     async def close(self) -> None:
         u = self._total_usage

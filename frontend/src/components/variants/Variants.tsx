@@ -10,6 +10,13 @@ import WorkingPulse from "../core/WorkingPulse";
 const IFRAME_WIDTH = 1280;
 const IFRAME_HEIGHT = 550;
 
+// 1234 -> "1.2k", 1234567 -> "1.2M"
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
+  return `${count}`;
+}
+
 interface VariantThumbnailProps {
   code: string;
   isSelected: boolean;
@@ -140,6 +147,21 @@ function Variants() {
                   {variant.model}
                 </span>
               )}
+              {/* Visual similarity score vs. the input screenshot */}
+              {typeof variant.score === "number" && (
+                <span
+                  className={`absolute top-1.5 left-1.5 z-10 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none shadow-sm backdrop-blur-sm border ${
+                    variant.score >= 0.8
+                      ? "bg-emerald-900/80 text-emerald-200 border-emerald-700/80"
+                      : variant.score >= 0.6
+                      ? "bg-amber-900/80 text-amber-200 border-amber-700/80"
+                      : "bg-red-900/80 text-red-200 border-red-700/80"
+                  }`}
+                  title="Visual similarity to the input screenshot"
+                >
+                  {Math.round(variant.score * 100)}%
+                </span>
+              )}
               <VariantThumbnail
                 code={variant.code}
                 isSelected={index === selectedVariantIndex}
@@ -163,6 +185,22 @@ function Variants() {
                   >
                     <WorkingPulse />
                   </div>
+                )}
+                {variant.status !== "generating" && variant.usage && (
+                  <span
+                    className="ml-auto shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                    title={`Input: ${variant.usage.inputTokens.toLocaleString()} tok · Output: ${variant.usage.outputTokens.toLocaleString()} tok${
+                      typeof variant.usage.costUsd === "number"
+                        ? ` · $${variant.usage.costUsd.toFixed(4)}`
+                        : ""
+                    }`}
+                  >
+                    {typeof variant.usage.costUsd === "number"
+                      ? `$${variant.usage.costUsd.toFixed(
+                          variant.usage.costUsd < 0.01 ? 4 : 2
+                        )}`
+                      : `${formatTokenCount(variant.usage.totalTokens)} tok`}
+                  </span>
                 )}
               </div>
             </div>

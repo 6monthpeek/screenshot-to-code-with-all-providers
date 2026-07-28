@@ -27,7 +27,7 @@ def build_update_prompt_from_history(
             ChatCompletionMessageParam,
             {
                 "role": "system",
-                "content": system_prompt.SYSTEM_PROMPT,
+                "content": system_prompt.build_system_prompt(stack),
             },
         )
     ]

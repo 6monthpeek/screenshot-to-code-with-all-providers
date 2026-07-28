@@ -5,7 +5,7 @@ from io import BytesIO
 import ipaddress
 import re
 import socket
-from typing import Iterable
+from typing import Iterable, Literal
 from urllib.parse import unquote_to_bytes, urljoin, urlparse
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -17,6 +17,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from babel_cdn import normalize_babel_cdn
+from codegen.project_export import build_project_files
 
 router = APIRouter()
 
@@ -62,6 +63,10 @@ MAX_REDIRECTS = 5
 class ExportRequest(BaseModel):
     code: str
     baseUrl: str | None = None
+    # "single" keeps the historical behavior (index.html + assets);
+    # "project" wraps the output in a runnable Vite scaffold.
+    format: Literal["single", "project"] = "single"
+    stack: str | None = None
 
 
 @dataclass(frozen=True)
@@ -439,10 +444,13 @@ def rewrite_raw_asset_urls(index_html: str, asset_path_by_url: dict[str, str]) -
     return index_html
 
 
-def create_project_zip(index_html: str, assets: Iterable[ExportedAsset]) -> bytes:
+def create_project_zip(
+    text_files: dict[str, str], assets: Iterable[ExportedAsset]
+) -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as zip_file:
-        zip_file.writestr("index.html", index_html)
+        for path, content in text_files.items():
+            zip_file.writestr(path, content)
         for asset in assets:
             zip_file.writestr(asset.path, asset.content)
 
@@ -476,16 +484,22 @@ async def export_code(request: ExportRequest) -> Response:
         rewrite_html_assets(soup, asset_path_by_url)
 
     index_html = rewrite_raw_asset_urls(str(soup), asset_path_by_url)
-    zip_content = create_project_zip(index_html, assets)
+    if request.format == "project":
+        text_files = build_project_files(index_html, request.stack)
+        filename = "screenshot-to-code-vite-project.zip"
+    else:
+        text_files = {"index.html": index_html}
+        filename = "screenshot-to-code-export.zip"
+    zip_content = create_project_zip(text_files, assets)
     print(
         "Export complete: "
-        f"candidates={len(candidates)} assets={len(assets)} "
+        f"format={request.format} candidates={len(candidates)} assets={len(assets)} "
         f"skipped={len(candidates) - len(assets)} responseBytes={len(zip_content)}"
     )
     return Response(
         content=zip_content,
         media_type="application/zip",
         headers={
-            "Content-Disposition": 'attachment; filename="screenshot-to-code-export.zip"'
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )

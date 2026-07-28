@@ -49,7 +49,7 @@ def build_video_prompt_messages(
     return [
         {
             "role": "system",
-            "content": system_prompt.SYSTEM_PROMPT,
+            "content": system_prompt.build_system_prompt(stack),
         },
         {
             "role": "user",

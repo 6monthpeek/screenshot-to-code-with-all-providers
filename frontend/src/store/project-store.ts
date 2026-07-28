@@ -6,6 +6,7 @@ import {
   VariantHistoryMessage,
   VariantStatus,
 } from "../components/commits/types";
+import { VariantUsage } from "../generateCode";
 import { PromptAsset } from "../types";
 import { useAppStore } from "./app-store";
 
@@ -56,6 +57,12 @@ interface ProjectStore {
   ) => void;
   resizeVariants: (hash: CommitHash, count: number) => void;
   setVariantModels: (hash: CommitHash, models: string[]) => void;
+  setVariantScore: (hash: CommitHash, numVariant: number, score: number) => void;
+  setVariantUsage: (
+    hash: CommitHash,
+    numVariant: number,
+    usage: VariantUsage
+  ) => void;
 
   startAgentEvent: (
     hash: CommitHash,
@@ -350,6 +357,35 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ...variant,
         model: models[index] ?? variant.model,
       }));
+      return {
+        commits: {
+          ...state.commits,
+          [hash]: { ...commit, variants },
+        },
+      };
+    }),
+  setVariantScore: (hash: CommitHash, numVariant: number, score: number) =>
+    set((state) => {
+      const commit = state.commits[hash];
+      if (!commit || commit.isCommitted) return state;
+      const variants = commit.variants.map((variant, index) =>
+        index === numVariant ? { ...variant, score } : variant
+      );
+      return {
+        commits: {
+          ...state.commits,
+          [hash]: { ...commit, variants },
+        },
+      };
+    }),
+
+  setVariantUsage: (hash: CommitHash, numVariant: number, usage: VariantUsage) =>
+    set((state) => {
+      const commit = state.commits[hash];
+      if (!commit || commit.isCommitted) return state;
+      const variants = commit.variants.map((variant, index) =>
+        index === numVariant ? { ...variant, usage } : variant
+      );
       return {
         commits: {
           ...state.commits,

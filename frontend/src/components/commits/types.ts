@@ -1,4 +1,5 @@
 import { PromptContent, PromptMessageRole } from "../../types";
+import { VariantUsage } from "../../generateCode";
 
 export type CommitHash = string;
 
@@ -38,6 +39,10 @@ export type Variant = {
   thinkingDuration?: number;
   agentEvents?: AgentEvent[];
   model?: string;
+  // Visual similarity vs. the input screenshot (0..1), sent via variantScore
+  score?: number;
+  // Token/cost summary sent with variantComplete
+  usage?: VariantUsage;
 };
 
 export type BaseCommit = {

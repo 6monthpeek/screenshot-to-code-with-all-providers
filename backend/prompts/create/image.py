@@ -15,6 +15,23 @@ def build_image_prompt_messages(
     image_policy = build_user_image_policy(image_generation_enabled)
     selected_stack = build_selected_stack_policy(stack)
     design_system_block = build_design_system_prompt_block(design_system)
+
+    # Only shown when there is more than one screenshot: the output is a
+    # single file, so multiple pages must live behind hash-based navigation.
+    multi_screenshot_block = ""
+    if len(image_data_urls) > 1:
+        multi_screenshot_block = f"""
+## Multiple screenshots
+
+You have been given {len(image_data_urls)} screenshots, numbered in the order provided (Screenshot 1 is the first image). Build ALL of them into this single file as separate pages/views:
+
+- Give each screenshot its own page section and use hash-based navigation (e.g. `#/page-1`, `#/page-2`; listen for `hashchange` or use the framework's state) so every page is reachable through links.
+- Show the page for Screenshot 1 by default when there is no hash.
+- If the screenshots appear to be different pages of the same website or app, link them the way the real app would (nav bar links, buttons, cards) and keep shared elements like the header, nav and footer consistent across pages.
+- If they appear unrelated, add a simple navigation scaffold labelled "Screenshot 1", "Screenshot 2", etc. to switch between them.
+- For mobile screenshots, do not include the device frame or browser chrome; focus only on the actual UI mockups.
+"""
+
     user_prompt = f"""
 Generate code for a web page that looks exactly like the provided screenshot(s).
 
@@ -32,16 +49,7 @@ Generate code for a web page that looks exactly like the provided screenshot(s).
 - If an asset in the original screenshot is not extractable (for example, occluded by other objects or is the background), when available, use generate_images to create image URLs from prompts (you may pass multiple prompts).
 
 - {image_policy}
-
-## Multiple screenshots
-
-If multiple screenshots are provided, organize them meaningfully:
-
-- If they appear to be different pages in a website, make them distinct pages and link them.
-- If they look like different tabs or views in an app, connect them with appropriate navigation.
-- If they appear unrelated, create a scaffold that separates them into "Screenshot 1", "Screenshot 2", "Screenshot 3", etc. so it is easy to navigate.
-- For mobile screenshots, do not include the device frame or browser chrome; focus only on the actual UI mockups.
-"""
+{multi_screenshot_block}"""
 
     # Add additional instructions provided by the user
     if text_prompt.strip():
@@ -64,7 +72,7 @@ If multiple screenshots are provided, organize them meaningfully:
     return [
         {
             "role": "system",
-            "content": system_prompt.SYSTEM_PROMPT,
+            "content": system_prompt.build_system_prompt(stack),
         },
         {
             "role": "user",

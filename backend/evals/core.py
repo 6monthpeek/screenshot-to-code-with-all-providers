@@ -80,5 +80,8 @@ async def generate_code_for_image(
         initial_file_state=None,
         option_codes=None,
         recorder=recorder,
+        # Same stack-repair behavior as the production websocket path, so
+        # eval outputs measure what users actually get.
+        stack=str(stack),
     )
     return await runner.run(model, prompt_messages)

@@ -5,6 +5,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from agent.engine import AgentEngine
 from agent.providers.base import EventSink, ExecutedToolCall, ProviderTurn
+from costs.token_usage import TokenUsage
 from llm import Llm
 
 
@@ -26,6 +27,22 @@ class NoToolProviderSession:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class PricedProviderSession(NoToolProviderSession):
+    """Fake session that reports spend, mirroring real providers."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.usage = TokenUsage(
+            input=1000, output=500, cache_read=200, total=1700
+        )
+
+    def total_cost_usd(self) -> float:
+        return 0.1234
+
+    def total_usage(self) -> TokenUsage:
+        return self.usage
 
 
 def _prompt_with_media(media_url: str) -> list[ChatCompletionMessageParam]:
@@ -109,3 +126,92 @@ async def test_asset_extraction_is_only_offered_for_still_image_inputs(
         is expected_extraction_enabled
     )
     assert session.closed is True
+
+
+@pytest.mark.asyncio
+async def test_engine_captures_cost_and_usage_before_session_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = PricedProviderSession()
+
+    def fake_create_provider_session(**kwargs: Any) -> PricedProviderSession:
+        return session
+
+    monkeypatch.setattr(
+        "agent.engine.create_provider_session", fake_create_provider_session
+    )
+
+    async def send_message(
+        message_type: str,
+        value: str | None,
+        variant_index: int,
+        data: dict[str, Any] | None,
+        event_id: str | None,
+    ) -> None:
+        return None
+
+    engine = AgentEngine(
+        send_message=send_message,
+        variant_index=0,
+        openai_api_key=None,
+        openai_base_url=None,
+        anthropic_api_key=None,
+        gemini_api_key="gemini-key",
+        replicate_api_key=None,
+        should_generate_images=True,
+    )
+
+    await engine.run(
+        Llm.GEMINI_3_FLASH_PREVIEW_MINIMAL,
+        _prompt_with_media("data:image/png;base64,aW1hZ2U="),
+    )
+
+    assert session.closed is True
+    assert engine.last_cost_usd == 0.1234
+    assert engine.last_token_usage is not None
+    assert engine.last_token_usage.total == 1700
+    assert engine.last_token_usage.total_input_tokens() == 1200
+
+
+@pytest.mark.asyncio
+async def test_engine_tolerates_sessions_without_usage_reporting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fakes/legacy sessions without spend methods must not break run()."""
+    session = NoToolProviderSession()
+
+    def fake_create_provider_session(**kwargs: Any) -> NoToolProviderSession:
+        return session
+
+    monkeypatch.setattr(
+        "agent.engine.create_provider_session", fake_create_provider_session
+    )
+
+    async def send_message(
+        message_type: str,
+        value: str | None,
+        variant_index: int,
+        data: dict[str, Any] | None,
+        event_id: str | None,
+    ) -> None:
+        return None
+
+    engine = AgentEngine(
+        send_message=send_message,
+        variant_index=0,
+        openai_api_key=None,
+        openai_base_url=None,
+        anthropic_api_key=None,
+        gemini_api_key="gemini-key",
+        replicate_api_key=None,
+        should_generate_images=True,
+    )
+
+    result = await engine.run(
+        Llm.GEMINI_3_FLASH_PREVIEW_MINIMAL,
+        _prompt_with_media("data:image/png;base64,aW1hZ2U="),
+    )
+
+    assert result == "<html>ok</html>"
+    assert engine.last_cost_usd is None
+    assert engine.last_token_usage is None

@@ -10,9 +10,14 @@ Gemini API key:
 
 import asyncio
 import json
+import os
 import sys
 
 import websockets
+
+OMNIROUTE_KEY = (
+    os.environ.get("OMNIROUTE_API_KEY") or os.environ.get("OPENAI_API_KEY") or "sk-local-dev"
+)
 
 
 async def main() -> int:
@@ -27,7 +32,7 @@ async def main() -> int:
         # Default model choice in the UI:
         "codeGenerationModel": "gemini-3-flash-preview (minimal thinking)",
         # User configured an OpenAI / OmniRoute provider in Settings:
-        "openAiApiKey": "sk-a6ceada84a74c6a2-5f96cd-0229c046",
+        "openAiApiKey": OMNIROUTE_KEY,
         "openAiBaseURL": "http://localhost:20128/v1",
         # NO Gemini API key provided!
         "geminiApiKey": None,

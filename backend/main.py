@@ -4,6 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import IS_DEBUG_ENABLED
@@ -21,23 +24,22 @@ from routes import (
 )
 from uploaded_assets import configure_uploaded_asset_routes
 
-app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-configure_uploaded_asset_routes(app)
 
-
-@app.on_event("startup")
-async def log_debug_mode() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     debug_status = "ENABLED" if IS_DEBUG_ENABLED else "DISABLED"
     print(f"Backend startup complete. Debug mode is {debug_status}.")
 
-
-@app.on_event("startup")
-async def probe_screenshot_preview_on_startup() -> None:
     # Detect (and warm up) headless Chromium so the screenshot_preview tool is
     # only offered when it can actually run. Logs the outcome.
     from preview_screenshot import probe_screenshot_preview
 
     await probe_screenshot_preview()
+    yield
+
+
+app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
+configure_uploaded_asset_routes(app)
 
 # Configure CORS settings
 app.add_middleware(

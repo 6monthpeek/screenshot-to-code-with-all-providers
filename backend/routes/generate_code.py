@@ -12,7 +12,6 @@ from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 from config import (
     ANTHROPIC_API_KEY,
     GEMINI_API_KEY,
-    IS_DEBUG_ENABLED,
     IS_PROD,
     NUM_VARIANTS,
     NUM_VARIANTS_VIDEO,
@@ -39,7 +38,9 @@ from typing import (
 )
 from openai.types.chat import ChatCompletionMessageParam
 
+from preview_screenshot import is_screenshot_preview_available
 from utils import print_prompt_preview
+from visual_verification import score_generated_page
 
 # WebSocket message types
 MessageType = Literal[
@@ -51,6 +52,7 @@ MessageType = Literal[
     "variantError",
     "variantCount",
     "variantModels",
+    "variantScore",
     "thinking",
     "assistant",
     "toolStart",
@@ -649,6 +651,7 @@ class AgenticGenerationStage:
         input_mode: str | None = None,
         generation_type: str | None = None,
         variant_model_configs: List[Dict[str, Any]] | None = None,
+        reference_images: List[str] | None = None,
     ):
         self.send_message = send_message
         self.openai_api_key = openai_api_key
@@ -669,6 +672,9 @@ class AgenticGenerationStage:
         self.stack = stack
         self.input_mode = input_mode
         self.generation_type = generation_type
+        # Original input screenshots (data URLs); used by the visual scoring
+        # pass to rate each variant against the source design.
+        self.reference_images = reference_images or []
 
     async def process_variants(
         self,
@@ -700,6 +706,14 @@ class AgenticGenerationStage:
         model: Llm,
         prompt_messages: List[ChatCompletionMessageParam],
     ) -> str:
+        # A custom OpenAI-compatible endpoint (OmniRoute, OpenRouter, ...) may
+        # be active globally or per variant; error copy must not blame OpenAI
+        # for failures coming from another gateway.
+        uses_custom_endpoint = bool(self.openai_base_url)
+        if self.variant_model_configs and index < len(self.variant_model_configs):
+            uses_custom_endpoint = uses_custom_endpoint or bool(
+                self.variant_model_configs[index].get("base_url")
+            )
         try:
             async def send_runner_message(
                 type: str,
@@ -738,21 +752,23 @@ class AgenticGenerationStage:
                 initial_file_state=self.file_state,
                 option_codes=self.option_codes,
                 recorder=recorder,
+                stack=self.stack,
             )
             # Resolve the per-variant override, if any.
             variant_cfg_obj = None
             if self.variant_model_configs and index < len(self.variant_model_configs):
-                from agent.variant_config import VariantModelConfig
+                from agent.variant_config import parse_variant_model_config
 
-                cfg_dict = self.variant_model_configs[index]
-                variant_cfg_obj = VariantModelConfig(
-                    family=cfg_dict.get("family", "openai"),
-                    model_id=cfg_dict["model_id"],
-                    label=cfg_dict.get("label", cfg_dict["model_id"]),
-                    api_key=cfg_dict["api_key"],
-                    base_url=cfg_dict.get("base_url"),
-                    reasoning_effort=cfg_dict.get("reasoning_effort"),
-                )
+                try:
+                    variant_cfg_obj = parse_variant_model_config(
+                        self.variant_model_configs[index]
+                    )
+                except ValueError as e:
+                    print(f"[VARIANT {index + 1}] Invalid model config: {e}")
+                    await self.send_message(
+                        "variantError", str(e), index, None, None
+                    )
+                    return ""
             completion = await runner.run(
                 model,
                 prompt_messages,
@@ -760,52 +776,87 @@ class AgenticGenerationStage:
             )
             if completion:
                 await self.send_message("setCode", completion, index, None, None)
+            # Per-variant spend summary captured by the engine before its
+            # provider session closed. None cost => unpriced model; usage may
+            # still be worth showing when tokens were counted.
+            usage = runner.last_token_usage
+            cost_data: Dict[str, Any] | None = None
+            if usage is not None and usage.total > 0:
+                cost_data = {
+                    "inputTokens": usage.total_input_tokens(),
+                    "outputTokens": usage.output,
+                    "totalTokens": usage.total,
+                }
+                if runner.last_cost_usd is not None:
+                    cost_data["costUsd"] = round(runner.last_cost_usd, 4)
             await self.send_message(
                 "variantComplete",
                 "Variant generation complete",
                 index,
-                None,
+                cost_data,
                 None,
             )
+            if completion:
+                await self._score_variant(index, completion)
             return completion
         except openai.AuthenticationError as e:
             print(f"[VARIANT {index + 1}] OpenAI Authentication failed", e)
-            error_message = (
-                "Incorrect OpenAI key. Please make sure your OpenAI API key is correct, "
-                "or create a new OpenAI API key on your OpenAI dashboard."
-                + (
-                    " Alternatively, you can purchase code generation credits directly on this website."
-                    if IS_PROD
-                    else ""
+            if uses_custom_endpoint:
+                error_message = (
+                    "The OpenAI-compatible endpoint rejected the API key. "
+                    "Please verify the API key and base URL configured for this "
+                    "provider in Settings."
                 )
-            )
+            else:
+                error_message = (
+                    "Incorrect OpenAI key. Please make sure your OpenAI API key is correct, "
+                    "or create a new OpenAI API key on your OpenAI dashboard."
+                    + (
+                        " Alternatively, you can purchase code generation credits directly on this website."
+                        if IS_PROD
+                        else ""
+                    )
+                )
             await self.send_message("variantError", error_message, index, None, None)
             return ""
         except openai.NotFoundError as e:
             print(f"[VARIANT {index + 1}] OpenAI Model not found", e)
-            error_message = (
-                e.message
-                + ". Please make sure you have followed the instructions correctly to obtain "
-                "an OpenAI key with GPT vision access: "
-                "https://github.com/abi/screenshot-to-code/blob/main/Troubleshooting.md"
-                + (
-                    " Alternatively, you can purchase code generation credits directly on this website."
-                    if IS_PROD
-                    else ""
+            if uses_custom_endpoint:
+                error_message = (
+                    e.message
+                    + ". The configured endpoint does not recognize this model id. "
+                    "Please check the model id against the models your gateway exposes."
                 )
-            )
+            else:
+                error_message = (
+                    e.message
+                    + ". Please make sure you have followed the instructions correctly to obtain "
+                    "an OpenAI key with GPT vision access: "
+                    "https://github.com/abi/screenshot-to-code/blob/main/Troubleshooting.md"
+                    + (
+                        " Alternatively, you can purchase code generation credits directly on this website."
+                        if IS_PROD
+                        else ""
+                    )
+                )
             await self.send_message("variantError", error_message, index, None, None)
             return ""
         except openai.RateLimitError as e:
             print(f"[VARIANT {index + 1}] OpenAI Rate limit exceeded", e)
-            error_message = (
-                "OpenAI error - 'You exceeded your current quota, please check your plan and billing details.'"
-                + (
-                    " Alternatively, you can purchase code generation credits directly on this website."
-                    if IS_PROD
-                    else ""
+            if uses_custom_endpoint:
+                error_message = (
+                    "The OpenAI-compatible endpoint reported a rate limit or "
+                    "quota error. Please check your gateway's limits and billing."
                 )
-            )
+            else:
+                error_message = (
+                    "OpenAI error - 'You exceeded your current quota, please check your plan and billing details.'"
+                    + (
+                        " Alternatively, you can purchase code generation credits directly on this website."
+                        if IS_PROD
+                        else ""
+                    )
+                )
             await self.send_message("variantError", error_message, index, None, None)
             return ""
         except Exception as e:
@@ -813,6 +864,35 @@ class AgenticGenerationStage:
             traceback.print_exception(type(e), e, e.__traceback__)
             await self.send_message("variantError", str(e), index, None, None)
             return ""
+
+    async def _score_variant(self, index: int, completion: str) -> None:
+        """Best-effort visual similarity score against the input screenshot.
+
+        Only meaningful for image-based create flows (the first prompt image
+        IS the target design there; update-flow images are edit annotations).
+        With multiple screenshots the prompt makes Screenshot 1 the default
+        page, so scoring the rendered default view against the first image
+        stays consistent. Any failure is swallowed - a missing score never
+        affects the variant.
+        """
+        if (
+            self.generation_type != "create"
+            or self.input_mode != "image"
+            or not self.reference_images
+        ):
+            return
+        if not is_screenshot_preview_available():
+            return
+        try:
+            score = await score_generated_page(completion, self.reference_images[0])
+            if score is None:
+                return
+            print(f"[VISUAL] Variant {index + 1} similarity score: {score}")
+            await self.send_message(
+                "variantScore", None, index, {"score": score}, None
+            )
+        except Exception as exc:
+            print(f"[VISUAL] Variant {index + 1} scoring skipped: {exc}")
 
 
 # Pipeline Middleware Implementations
@@ -932,25 +1012,25 @@ class CodeGenerationMiddleware(Middleware):
                 code_generation_model=context.extracted_params.code_generation_model,
                 openai_base_url=context.extracted_params.openai_base_url,
             )
-            if IS_DEBUG_ENABLED or True:
-                labels: List[str] = []
-                if context.extracted_params.variant_model_configs:
-                    for cfg_dict in context.extracted_params.variant_model_configs:
-                        labels.append(
-                            cfg_dict.get("label")
-                            or cfg_dict.get("model_id")
-                            or "OpenAI/OmniRoute"
-                        )
-                else:
-                    labels = [model.value for model in context.variant_models]
+            # Always tell the frontend which model serves each variant.
+            labels: List[str] = []
+            if context.extracted_params.variant_model_configs:
+                for cfg_dict in context.extracted_params.variant_model_configs:
+                    labels.append(
+                        cfg_dict.get("label")
+                        or cfg_dict.get("model_id")
+                        or "OpenAI/OmniRoute"
+                    )
+            else:
+                labels = [model.value for model in context.variant_models]
 
-                await context.send_message(
-                    "variantModels",
-                    None,
-                    0,
-                    {"models": labels},
-                    None,
-                )
+            await context.send_message(
+                "variantModels",
+                None,
+                0,
+                {"models": labels},
+                None,
+            )
 
             generation_stage = AgenticGenerationStage(
                 send_message=context.send_message,
@@ -968,6 +1048,7 @@ class CodeGenerationMiddleware(Middleware):
                 input_mode=str(context.extracted_params.input_mode),
                 generation_type=context.extracted_params.generation_type,
                 variant_model_configs=context.extracted_params.variant_model_configs,
+                reference_images=context.extracted_params.prompt["images"],
             )
 
             context.variant_completions = await generation_stage.process_variants(

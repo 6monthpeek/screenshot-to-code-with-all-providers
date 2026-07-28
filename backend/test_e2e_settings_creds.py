@@ -10,9 +10,14 @@ Run while backend (without .env) is on :7001 and OmniRoute is on :20128.
 
 import asyncio
 import json
+import os
 import sys
 
 import websockets
+
+OMNIROUTE_KEY = (
+    os.environ.get("OMNIROUTE_API_KEY") or os.environ.get("OPENAI_API_KEY") or "sk-local-dev"
+)
 
 
 async def main() -> int:
@@ -27,7 +32,7 @@ async def main() -> int:
         # No variantModelConfigs — legacy selection path.
         "codeGenerationModel": "omniroute antigravity/gemini-3.6-flash-high",
         # What App.tsx sends when an enabled OmniRoute provider exists:
-        "openAiApiKey": "sk-a6ceada84a74c6a2-5f96cd-0229c046",
+        "openAiApiKey": OMNIROUTE_KEY,
         "openAiBaseURL": "http://localhost:20128/v1",
     }
 

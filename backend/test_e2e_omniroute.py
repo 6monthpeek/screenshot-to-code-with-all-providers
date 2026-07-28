@@ -6,9 +6,14 @@ Run while backend is on :7001 and OmniRoute is on :20128.
 
 import asyncio
 import json
+import os
 import sys
 
 import websockets
+
+OMNIROUTE_KEY = (
+    os.environ.get("OMNIROUTE_API_KEY") or os.environ.get("OPENAI_API_KEY") or "sk-local-dev"
+)
 
 
 async def main() -> int:
@@ -26,7 +31,7 @@ async def main() -> int:
                 "family": "openai",
                 "model_id": "antigravity/gemini-3.6-flash-high",
                 "label": "OmniRoute gemini-3.6-flash-high",
-                "api_key": "sk-a6ceada84a74c6a2-5f96cd-0229c046",
+                "api_key": OMNIROUTE_KEY,
                 "base_url": "http://localhost:20128/v1",
             }
         ],

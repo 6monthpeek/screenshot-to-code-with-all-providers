@@ -1,10 +1,12 @@
 from typing import Any, Awaitable, Callable, Coroutine, List, Optional, Tuple
 import asyncio
+import json
 import os
 from datetime import datetime
 import time
 import inspect
 from llm import Llm
+from codegen.utils import check_stack_compliance
 from config import LOCAL_ASSET_BASE_URL
 from prompts.prompt_types import Stack
 from agent.engine import BudgetExceededError
@@ -60,6 +62,46 @@ def get_eval_output_subfolder(stack: Stack, model: str) -> str:
     today = datetime.now().strftime("%b_%d_%Y")
     output_dir = EVALS_DIR + "/results"
     return os.path.join(output_dir, f"{today}_{model}_{stack}")
+
+
+def record_stack_compliance(
+    output_subfolder: str,
+    stack: Stack,
+    model: str,
+    results: dict[str, bool],
+) -> str:
+    """Merge per-file stack-compliance flags into ``stack_compliance.json``.
+
+    This file is the A/B regression artifact for prompt/model changes:
+    comparing ``compliance_rate`` between two result folders shows whether a
+    change made outputs drift away from the selected stack. Re-runs merge
+    into the existing report so diff-mode/incremental runs stay accurate.
+    """
+    report_path = os.path.join(output_subfolder, "stack_compliance.json")
+    existing: dict[str, Any] = {}
+    if os.path.exists(report_path):
+        try:
+            with open(report_path) as file:
+                existing = json.load(file)
+        except Exception:
+            existing = {}
+
+    files: dict[str, bool] = dict(existing.get("files", {}))
+    files.update(results)
+    compliant = sum(1 for ok in files.values() if ok)
+    report: dict[str, Any] = {
+        "stack": str(stack),
+        "model": model,
+        "total": len(files),
+        "compliant": compliant,
+        "compliance_rate": (
+            round(compliant / len(files), 4) if files else 0.0
+        ),
+        "files": dict(sorted(files.items())),
+    }
+    with open(report_path, "w") as file:
+        json.dump(report, file, indent=2)
+    return report_path
 
 
 def count_pending_eval_tasks(
@@ -267,6 +309,7 @@ async def run_image_evals(
     output_files: List[str] = []
     timing_data: List[str] = []
     failed_tasks_log: List[str] = []
+    compliance_results: dict[str, bool] = {}
 
     async def emit_progress(event: dict[str, Any]) -> None:
         if progress_callback is None:
@@ -321,6 +364,9 @@ async def run_image_evals(
                         f"{final_output_html_filename}: {time_taken:.2f} seconds"
                     )
                     output_files.append(final_output_html_filename)
+                    compliance_results[final_output_html_filename] = (
+                        check_stack_compliance(generated_content, stack)
+                    )
                     print(
                         f"Successfully processed and wrote {final_output_html_filename}"
                     )
@@ -415,5 +461,21 @@ async def run_image_evals(
             print(f"Failed tasks log saved to {failed_log_path}")
         except Exception as e:
             print(f"Error writing failed tasks log {failed_log_path}: {e}")
+
+    # Stack-compliance metric for A/B regression tracking
+    if compliance_results:
+        try:
+            report_path = record_stack_compliance(
+                output_subfolder, stack, selected_model.value, compliance_results
+            )
+            compliant_count = sum(
+                1 for ok in compliance_results.values() if ok
+            )
+            print(
+                f"Stack compliance: {compliant_count}/{len(compliance_results)} "
+                f"outputs match '{stack}' (report: {report_path})"
+            )
+        except Exception as e:
+            print(f"Error writing stack compliance report: {e}")
 
     return output_files

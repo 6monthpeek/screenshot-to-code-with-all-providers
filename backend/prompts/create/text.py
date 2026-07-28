@@ -31,7 +31,7 @@ Generate UI for {text_prompt}.
     return [
         {
             "role": "system",
-            "content": system_prompt.SYSTEM_PROMPT,
+            "content": system_prompt.build_system_prompt(stack),
         },
         {
             "role": "user",

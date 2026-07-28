@@ -11,6 +11,15 @@ const ERROR_MESSAGE =
 
 const CANCEL_MESSAGE = "Code generation cancelled";
 
+// Per-variant spend summary sent with variantComplete (absent when the
+// provider reported no token counts).
+export interface VariantUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd?: number;
+}
+
 type WebSocketResponse = {
   type:
     | "chunk"
@@ -21,6 +30,7 @@ type WebSocketResponse = {
     | "variantError"
     | "variantCount"
     | "variantModels"
+    | "variantScore"
     | "thinking"
     | "assistant"
     | "toolStart"
@@ -35,10 +45,11 @@ interface CodeGenerationCallbacks {
   onChange: (chunk: string, variantIndex: number) => void;
   onSetCode: (code: string, variantIndex: number) => void;
   onStatusUpdate: (status: string, variantIndex: number) => void;
-  onVariantComplete: (variantIndex: number) => void;
+  onVariantComplete: (variantIndex: number, usage?: VariantUsage) => void;
   onVariantError: (variantIndex: number, error: string) => void;
   onVariantCount: (count: number) => void;
   onVariantModels: (models: string[]) => void;
+  onVariantScore: (variantIndex: number, score: number) => void;
   onThinking: (content: string, variantIndex: number, eventId?: string) => void;
   onAssistant: (content: string, variantIndex: number, eventId?: string) => void;
   onToolStart: (data: any, variantIndex: number, eventId?: string) => void;
@@ -74,13 +85,21 @@ export function generateCode(
     } else if (response.type === "setCode") {
       callbacks.onSetCode(response.value || "", response.variantIndex);
     } else if (response.type === "variantComplete") {
-      callbacks.onVariantComplete(response.variantIndex);
+      const usage =
+        typeof response.data?.totalTokens === "number"
+          ? (response.data as VariantUsage)
+          : undefined;
+      callbacks.onVariantComplete(response.variantIndex, usage);
     } else if (response.type === "variantError") {
       callbacks.onVariantError(response.variantIndex, response.value || "");
     } else if (response.type === "variantCount") {
       callbacks.onVariantCount(parseInt(response.value || "1"));
     } else if (response.type === "variantModels") {
       callbacks.onVariantModels(response.data?.models || []);
+    } else if (response.type === "variantScore") {
+      if (typeof response.data?.score === "number") {
+        callbacks.onVariantScore(response.variantIndex, response.data.score);
+      }
     } else if (response.type === "thinking") {
       callbacks.onThinking(response.value || "", response.variantIndex, response.eventId);
     } else if (response.type === "assistant") {

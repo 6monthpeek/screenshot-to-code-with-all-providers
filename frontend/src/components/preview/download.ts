@@ -47,3 +47,33 @@ export const downloadCode = async (code: string) => {
     );
   }
 };
+
+export const downloadProject = async (code: string, stack: string) => {
+  try {
+    const response = await fetch(`${HTTP_BACKEND_URL}/api/export`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        code,
+        baseUrl: window.location.href,
+        format: "project",
+        stack,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Project export failed with status ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    downloadBlob(
+      blob,
+      filenameFromContentDisposition(response.headers.get("Content-Disposition"))
+    );
+  } catch (error) {
+    console.warn("Project export failed, falling back to single-file export", error);
+    await downloadCode(code);
+  }
+};
