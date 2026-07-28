@@ -151,7 +151,9 @@ class OpenAICompatibleProviderSession(ProviderSession):
             tc_data = tool_calls_dict[idx]
             args_str = tc_data["arguments"]
             try:
-                args = parse_json_arguments(args_str)
+                args, parse_error = parse_json_arguments(args_str)
+                if parse_error or not isinstance(args, dict):
+                    args = {"INVALID_JSON": args_str}
             except Exception:
                 args = {"INVALID_JSON": args_str}
 
