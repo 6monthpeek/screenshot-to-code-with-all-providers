@@ -358,10 +358,11 @@ class ParameterExtractionStage:
         # Extract file state for agent edits
         raw_file_state = params.get("fileState")
         file_state: Dict[str, str] | None = None
-        if isinstance(raw_file_state, dict):
-            content = raw_file_state.get("content")
+        if raw_file_state:
+            state_dict = raw_file_state if isinstance(raw_file_state, dict) else (dict(raw_file_state) if isinstance(raw_file_state, (tuple, list)) else {})
+            content = state_dict.get("content")
             if isinstance(content, str) and content.strip():
-                path = raw_file_state.get("path") or "index.html"
+                path = str(state_dict.get("path") or "index.html")
                 file_state = {"path": path, "content": content}
 
         raw_option_codes = params.get("optionCodes")
@@ -388,8 +389,9 @@ class ParameterExtractionStage:
         if isinstance(raw_variant_configs, list) and raw_variant_configs:
             variant_model_configs = []
             for entry in raw_variant_configs:
-                if isinstance(entry, dict):
-                    variant_model_configs.append(entry)
+                entry_dict = entry if isinstance(entry, dict) else (dict(entry) if isinstance(entry, (tuple, list)) else {})
+                if entry_dict:
+                    variant_model_configs.append(entry_dict)
 
         # User's dropdown choice (e.g. "gpt-5.5 (high thinking)"). Sent as
         # codeGenerationModel from the frontend settings.
